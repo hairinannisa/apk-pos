@@ -2,6 +2,9 @@ package com.example.ui.pos
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.cashier.CashierScreen
+import com.example.ui.cashier.CashierViewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
@@ -119,6 +123,20 @@ fun PosScreen(
     var showCartSheet by remember { mutableStateOf(false) }
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showHistoryDialog by remember { mutableStateOf(false) }
+    var showCashierQueue by remember { mutableStateOf(false) }
+
+    // Layar "Bayar Meja" (daftar tagihan belum/sudah dibayar dari antrian
+    // dapur) ditampilkan sebagai pengganti layar Kasir biasa, bukan dialog
+    // — supaya kasir bisa leluasa menggulir daftar & membuka detail bayar.
+    if (showCashierQueue) {
+        val cashierViewModel: CashierViewModel = viewModel()
+        CashierScreen(
+            user = user,
+            cashierViewModel = cashierViewModel,
+            onBack = { showCashierQueue = false }
+        )
+        return
+    }
 
     val cartSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -142,6 +160,13 @@ fun PosScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showCashierQueue = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Receipt,
+                            contentDescription = "Bayar Pesanan Meja",
+                            tint = MinimalTextSecondary
+                        )
+                    }
                     IconButton(onClick = { showHistoryDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.History,

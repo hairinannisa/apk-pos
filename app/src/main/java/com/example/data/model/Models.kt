@@ -176,6 +176,7 @@ data class TableOrder(
     val paymentMethod: String? = "cash", // "cash" | "transfer" | "qris"
     val paymentProofUrl: String? = null,
     val customerPhone: String? = null,
+    val cancelReason: String? = null,
     val status: String = "pending", // "pending" | "preparing" | "completed" | "cancelled"
     val paymentStatus: String = "unpaid",
     val createdAt: String = ""

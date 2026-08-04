@@ -1,0 +1,457 @@
+package com.example.ui.cashier
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Dialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
+import com.example.data.model.User
+import com.example.ui.components.formatRupiah
+import com.example.ui.pos.ProofUploadState
+import com.example.ui.theme.GreenAccent
+import com.example.ui.theme.GreenAccentDark
+import com.example.ui.theme.GreenPrimary
+import com.example.ui.theme.MinimalBackground
+import com.example.ui.theme.MinimalBorder
+import com.example.ui.theme.MinimalTextPrimary
+import com.example.ui.theme.MinimalTextSecondary
+
+/**
+ * Layar "Bayar Meja" — daftar tagihan yang sedang berjalan di antrian dapur
+ * (belum dibayar) dan yang sudah selesai dibayar, sama seperti CashierTab di
+ * website. Kasir bisa langsung melihat status dapur tiap tagihan (masih
+ * dimasak / sudah selesai) sebelum memproses pembayaran.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CashierScreen(
+    user: User,
+    cashierViewModel: CashierViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    cashierViewModel.setUser(user)
+
+    val bills by cashierViewModel.bills.collectAsState()
+    val paidOrders by cashierViewModel.paidOrders.collectAsState()
+    val isLoading by cashierViewModel.isLoading.collectAsState()
+    val paymentState by cashierViewModel.paymentState.collectAsState()
+
+    var activeTab by remember { mutableStateOf("unpaid") }
+    var selectedBill by remember { mutableStateOf<TableBill?>(null) }
+
+    LaunchedEffect(paymentState) {
+        if (paymentState is PaymentState.Success) {
+            selectedBill = null
+            cashierViewModel.resetPaymentState()
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text("Bayar Pesanan Meja", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GreenPrimary)
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MinimalBackground),
+                modifier = Modifier.border(0.5.dp, MinimalBorder, RoundedCornerShape(0.dp))
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(MinimalBackground)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CashierTabChip(
+                    label = "Belum Dibayar (${bills.size})",
+                    isSelected = activeTab == "unpaid",
+                    onClick = { activeTab = "unpaid" }
+                )
+                CashierTabChip(
+                    label = "Sudah Dibayar",
+                    isSelected = activeTab == "paid",
+                    onClick = { activeTab = "paid" }
+                )
+            }
+
+            if (activeTab == "unpaid") {
+                if (isLoading && bills.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = GreenPrimary)
+                    }
+                } else if (bills.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Receipt, contentDescription = null, tint = MinimalBorder, modifier = Modifier.size(64.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Belum ada tagihan berjalan", color = MinimalTextPrimary, fontWeight = FontWeight.Bold)
+                            Text("Pesanan meja/bungkus yang dikirim ke dapur akan muncul di sini.", color = MinimalTextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(bills, key = { it.billKey }) { bill ->
+                            BillCard(bill = bill, onClick = { selectedBill = bill })
+                        }
+                    }
+                }
+            } else {
+                if (paidOrders.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Belum ada riwayat pembayaran.", color = MinimalTextSecondary, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(paidOrders, key = { it.id }) { order ->
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                modifier = Modifier.fillMaxWidth().border(1.dp, MinimalBorder, RoundedCornerShape(14.dp))
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(order.tableName.ifBlank { order.customerName }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(order.totalAmount.formatRupiah(), fontWeight = FontWeight.Bold, color = GreenPrimary, fontSize = 13.sp)
+                                    }
+                                    Text(
+                                        "Dibayar via ${order.paymentMethod?.uppercase() ?: "CASH"}",
+                                        fontSize = 11.sp,
+                                        color = MinimalTextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    selectedBill?.let { bill ->
+        PayBillDialog(
+            bill = bill,
+            cashierViewModel = cashierViewModel,
+            paymentState = paymentState,
+            onDismiss = {
+                cashierViewModel.clearPaymentProof()
+                cashierViewModel.resetPaymentState()
+                selectedBill = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun CashierTabChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.clickable { onClick() },
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = if (isSelected) GreenPrimary else Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) GreenPrimary else MinimalBorder)
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isSelected) Color.White else MinimalTextSecondary
+        )
+    }
+}
+
+@Composable
+private fun BillCard(bill: TableBill, onClick: () -> Unit) {
+    val statusLabel = if (bill.allCompleted) "Siap Dibayar — Selesai Dimasak" else "Masih Diproses Dapur"
+    val statusColor = if (bill.allCompleted) GreenPrimary else Color(0xFFEA580C)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MinimalBorder)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(bill.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = MinimalTextPrimary)
+                Text(bill.total.formatRupiah(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GreenPrimary)
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = bill.customerNames.joinToString(", "),
+                fontSize = 12.sp,
+                color = MinimalTextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(statusColor.copy(alpha = 0.12f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                Text(statusLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = statusColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PayBillDialog(
+    bill: TableBill,
+    cashierViewModel: CashierViewModel,
+    paymentState: PaymentState,
+    onDismiss: () -> Unit
+) {
+    var selectedMethod by remember { mutableStateOf("cash") }
+    var cashInput by remember { mutableStateOf(bill.total.toInt().toString()) }
+    val proofUploadState by cashierViewModel.proofUploadState.collectAsState()
+
+    val cashReceived = cashInput.toDoubleOrNull() ?: 0.0
+    val change = cashReceived - bill.total
+    val proofUrl = (proofUploadState as? ProofUploadState.Success)?.url
+    val needsProof = selectedMethod != "cash"
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) cashierViewModel.uploadPaymentProof(uri) }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier.fillMaxWidth(0.95f).fillMaxHeight(0.85f)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Bayar: ${bill.displayName}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Tutup")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Rincian item dari semua nota yang tergabung dalam tagihan ini.
+                    bill.orders.forEach { order ->
+                        order.items.forEach { item ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("${item.qty}x ${item.name}", fontSize = 12.sp, color = MinimalTextSecondary)
+                                Text((item.price * item.qty).formatRupiah(), fontSize = 12.sp, color = MinimalTextSecondary)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFFF0F4E9))
+                            .padding(14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Total Tagihan", fontSize = 12.sp, color = MinimalTextSecondary)
+                            Text(bill.total.formatRupiah(), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = GreenPrimary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Metode Pembayaran", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("cash" to "Tunai", "qris" to "QRIS", "transfer" to "Transfer").forEach { (key, label) ->
+                            val isSelected = selectedMethod == key
+                            Card(
+                                modifier = Modifier.weight(1f).clickable {
+                                    selectedMethod = key
+                                    if (key == "cash") cashierViewModel.clearPaymentProof()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9))
+                            ) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                                    Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (isSelected) Color.White else MinimalTextSecondary)
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedMethod == "cash") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Kembalian:", fontSize = 13.sp)
+                            Text(
+                                if (change >= 0) change.formatRupiah() else "Kurang ${(-change).formatRupiah()}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (change >= 0) GreenPrimary else Color(0xFFDC2626)
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        when (proofUploadState) {
+                            is ProofUploadState.Success -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color(0xFFEFFBEE))
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    coil.compose.AsyncImage(
+                                        model = proofUploadState.url,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text("Bukti bayar tersimpan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E8E3E))
+                                }
+                            }
+                            is ProofUploadState.Uploading -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = GreenPrimary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Mengunggah...", fontSize = 12.sp, color = MinimalTextSecondary)
+                                }
+                            }
+                            else -> {
+                                OutlinedButton(
+                                    onClick = { imagePickerLauncher.launch("image/*") },
+                                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = GreenPrimary)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Unggah Bukti Bayar", fontSize = 12.sp, color = GreenPrimary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (paymentState is PaymentState.Error) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(paymentState.message, fontSize = 12.sp, color = Color(0xFFDC2626))
+                    }
+                }
+
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+                    Button(
+                        onClick = {
+                            cashierViewModel.payBill(bill, selectedMethod, proofUrl)
+                        },
+                        enabled = paymentState !is PaymentState.Processing &&
+                            (selectedMethod != "cash" || cashReceived >= bill.total) &&
+                            (!needsProof || proofUrl != null),
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GreenAccent, contentColor = GreenAccentDark)
+                    ) {
+                        if (paymentState is PaymentState.Processing) {
+                            CircularProgressIndicator(color = GreenAccentDark, modifier = Modifier.size(20.dp))
+                        } else {
+                            Text("KONFIRMASI LUNAS", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

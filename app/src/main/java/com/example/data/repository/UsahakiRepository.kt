@@ -12,6 +12,7 @@ import com.example.data.model.Order
 import com.example.data.model.OrderItem
 import com.example.data.model.Product
 import com.example.data.model.TableOrder
+import com.example.data.model.TableOrderItem
 import com.example.data.model.Transaction
 import com.example.data.model.User
 import com.google.firebase.FirebaseApp
@@ -491,4 +492,255 @@ class UsahakiRepository(context: Context) {
             Result.failure(e)
         }
     }
+
+    // -------------------------------------------------------------
+    // Batalkan / Tambah Item Pesanan Dapur (sama seperti QueueTab &
+    // CashierTab di website — dineInService.cancelTableOrder &
+    // addItemsToExistingOrder)
+    // -------------------------------------------------------------
+
+    suspend fun cancelTableOrder(orderId: String, reason: String? = null): Result<Unit> {
+        return try {
+            db.collection("tableorders").document(orderId).update(
+                mapOf(
+                    "status" to "cancelled",
+                    "cancelReason" to (reason ?: "Dibatalkan oleh dapur/kasir"),
+                    "completedAt" to currentIsoTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling table order", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun reactivateTableOrder(orderId: String): Result<Unit> {
+        return try {
+            db.collection("tableorders").document(orderId).update(
+                mapOf(
+                    "status" to "pending",
+                    "cancelReason" to null,
+                    "completedAt" to null
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reactivating table order", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Tambah item baru ke pesanan yang sudah ada di antrian dapur (mis. meja
+     * minta tambah 1 porsi lagi). Meniru persis logika
+     * dineInService.addItemsToExistingOrder di website: total & status pesanan
+     * dihitung ulang, dan pesanan otomatis kembali ke antrian dapur
+     * ("pending"/"preparing") kalau ada item baru yang belum selesai — kecuali
+     * kalau pesanan sudah lunas dibayar, itemnya tidak boleh diubah lagi.
+     */
+    suspend fun addItemsToTableOrder(order: TableOrder, newItems: List<TableOrderItem>): Result<Unit> {
+        if (newItems.isEmpty()) return Result.failure(IllegalArgumentException("Minimal 1 item harus ditambahkan."))
+        if (order.paymentStatus == "paid") {
+            return Result.failure(IllegalStateException("Pesanan sudah dibayar lunas, tidak bisa menambah item lagi."))
+        }
+        if (order.status == "cancelled") {
+            return Result.failure(IllegalStateException("Pesanan sudah dibatalkan, tidak bisa menambah item."))
+        }
+        return try {
+            val formattedNewItems = newItems.map { item ->
+                item.copy(status = if (item.isSelfService == true) "done" else "pending")
+            }
+            val allItems = order.items + formattedNewItems
+            val newTotal = allItems.sumOf { it.price * it.qty }
+            val allDone = allItems.all { it.status == "done" }
+            val anyDone = allItems.any { it.status == "done" }
+            val newStatus = if (allDone) "completed" else if (anyDone) "preparing" else "pending"
+
+            db.collection("tableorders").document(order.id).update(
+                mapOf(
+                    "items" to allItems,
+                    "totalAmount" to newTotal,
+                    "status" to newStatus,
+                    "completedAt" to if (newStatus == "completed") currentIsoTimestamp() else null
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error adding items to table order", e)
+            Result.failure(e)
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Kasir — Daftar Tagihan Meja (Belum Dibayar / Sudah Dibayar), sama
+    // seperti CashierTab di website (dineInService.subscribeToUnpaidOrders /
+    // subscribeToPaidOrders). Query business-wide (tanpa filter cabang) sama
+    // persis seperti website, supaya kasir tetap bisa memproses pembayaran
+    // dari cabang manapun kalau memang tidak dipisah per cabang di sana.
+    // -------------------------------------------------------------
+
+    fun observeUnpaidTableOrders(businessId: String): Flow<List<TableOrder>> = callbackFlow {
+        if (businessId.isEmpty()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val listener = db.collection("tableorders")
+            .whereEqualTo("businessId", businessId)
+            .whereEqualTo("paymentStatus", "unpaid")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Error observing unpaid table orders", error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val orders = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(TableOrder::class.java)?.copy(id = doc.id)
+                    }.filter { it.status != "cancelled" } // Pesanan dibatalkan tidak perlu ditagih.
+                    trySend(orders)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    /** Riwayat pesanan yang dibatalkan — sama seperti tab "Dibatalkan" di QueueTab website. */
+    fun observeCancelledTableOrders(businessId: String): Flow<List<TableOrder>> = callbackFlow {
+        if (businessId.isEmpty()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val listener = db.collection("tableorders")
+            .whereEqualTo("businessId", businessId)
+            .whereEqualTo("status", "cancelled")
+            .limit(50)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Error observing cancelled table orders", error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val orders = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(TableOrder::class.java)?.copy(id = doc.id)
+                    }.sortedByDescending { it.createdAt }
+                    trySend(orders)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun observePaidTableOrders(businessId: String): Flow<List<TableOrder>> = callbackFlow {        if (businessId.isEmpty()) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val listener = db.collection("tableorders")
+            .whereEqualTo("businessId", businessId)
+            .whereEqualTo("paymentStatus", "paid")
+            .limit(100)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Error observing paid table orders", error)
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val orders = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(TableOrder::class.java)?.copy(id = doc.id)
+                    }.sortedByDescending { it.createdAt }
+                    trySend(orders)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    /**
+     * Proses pembayaran 1 tagihan (1 meja, bisa berisi beberapa TableOrder
+     * kalau digabung) — meniru persis dineInService.markTablePaid: tandai
+     * semua tableorder terkait lunas, catat ke "transactions", cerminkan ke
+     * "orders" (supaya laporan penjualan POS tetap lengkap), lalu bebaskan
+     * mejanya.
+     */
+    suspend fun markTablePaid(
+        businessId: String,
+        tableId: String,
+        ordersToPay: List<TableOrder>,
+        operatingBranchId: String?,
+        paymentMethod: String,
+        cashierName: String,
+        paymentProofUrl: String?
+    ): Result<Unit> {
+        return try {
+            val batch = db.batch()
+            val nowStr = currentIsoTimestamp()
+            val normalizedMethod = if (paymentMethod == "qris") "transfer" else paymentMethod
+
+            ordersToPay.forEach { order ->
+                val orderRef = db.collection("tableorders").document(order.id)
+                val updateMap = mutableMapOf<String, Any?>(
+                    "paymentStatus" to "paid",
+                    "paymentMethod" to normalizedMethod
+                )
+                if (!paymentProofUrl.isNullOrEmpty()) updateMap["paymentProofUrl"] = paymentProofUrl
+                batch.update(orderRef, updateMap)
+
+                val txRef = db.collection("transactions").document()
+                val newTransaction = Transaction(
+                    id = txRef.id,
+                    businessId = businessId,
+                    branchId = order.branchId ?: operatingBranchId,
+                    orderId = order.id,
+                    type = "income",
+                    category = "penjualan",
+                    amount = order.totalAmount,
+                    method = normalizedMethod,
+                    createdBy = cashierName,
+                    createdAt = nowStr
+                )
+                batch.set(txRef, newTransaction)
+
+                val posOrderRef = db.collection("orders").document(order.id)
+                val posOrder = Order(
+                    id = order.id,
+                    businessId = businessId,
+                    branchId = order.branchId ?: operatingBranchId,
+                    source = "pos",
+                    items = order.items.map { item ->
+                        OrderItem(
+                            productId = item.productId,
+                            name = item.name,
+                            qty = item.qty,
+                            price = item.price,
+                            variant = item.variant
+                        )
+                    },
+                    totalAmount = order.totalAmount,
+                    status = "completed",
+                    paymentStatus = "paid",
+                    paymentMethod = normalizedMethod,
+                    paymentProofUrl = paymentProofUrl,
+                    orderType = order.orderType,
+                    tableId = order.tableId,
+                    tableName = order.tableName,
+                    createdAt = nowStr
+                )
+                batch.set(posOrderRef, posOrder)
+            }
+
+            if (tableId.isNotEmpty() && tableId != "no_table" && !tableId.startsWith("MQ-") && tableId != "unassigned") {
+                val tableRef = db.collection("tables").document(tableId)
+                batch.update(tableRef, "status", "available")
+            }
+
+            batch.commit().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error marking table paid", e)
+            Result.failure(e)
+        }
+    }
 }
+
