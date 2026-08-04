@@ -1,0 +1,6 @@
+{
+  "name": "Usahaki POS & Dapur",
+  "description": "Aplikasi Mobile Kasir (POS) & Dapur (Kitchen) Usahaki.id terhubung langsung ke Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
