@@ -1,11 +1,13 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.example.data.model.Business
 import com.example.data.model.Branch
 import com.example.data.model.CartItem
 import com.example.data.model.Category
+import com.example.data.model.DiningTable
 import com.example.data.model.Order
 import com.example.data.model.OrderItem
 import com.example.data.model.Product
@@ -19,6 +21,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -27,6 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.random.Random
 
 class UsahakiRepository(context: Context) {
 
@@ -57,6 +61,10 @@ class UsahakiRepository(context: Context) {
 
     val db: FirebaseFirestore by lazy {
         FirebaseFirestore.getInstance(firebaseApp, NAMED_DATABASE_ID)
+    }
+
+    val storage: FirebaseStorage by lazy {
+        FirebaseStorage.getInstance(firebaseApp)
     }
 
     // Helper to format ISO 8601 timestamp
@@ -163,6 +171,57 @@ class UsahakiRepository(context: Context) {
     }
 
     // -------------------------------------------------------------
+    // Dining Tables (Meja) — sama seperti koleksi "tables" di website
+    // -------------------------------------------------------------
+
+    /**
+     * Ambil daftar meja aktif milik bisnis, opsional difilter per cabang
+     * (sama seperti dineInService.getTables di website). Dipakai untuk
+     * pilihan "Meja" saat checkout dine-in di POS mobile.
+     */
+    suspend fun getTables(businessId: String, branchId: String?): List<DiningTable> {
+        if (businessId.isEmpty()) return emptyList()
+        return try {
+            var query: Query = db.collection("tables").whereEqualTo("businessId", businessId)
+            if (!branchId.isNullOrEmpty()) {
+                query = query.whereEqualTo("branchId", branchId)
+            }
+            query.get().await().documents.mapNotNull { doc ->
+                doc.toObject(DiningTable::class.java)?.copy(id = doc.id)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching tables", e)
+            emptyList()
+        }
+    }
+
+    // -------------------------------------------------------------
+    // Upload Bukti Pembayaran (Transfer / QRIS)
+    // -------------------------------------------------------------
+
+    /**
+     * Unggah foto bukti bayar ke Firebase Storage, path sama persis dengan
+     * konvensi website (`users/{uid}/uploads/payment-proofs/...`, lihat
+     * storage.rules) supaya lolos Storage Security Rules yang mensyaratkan
+     * request.auth.uid == segmen {userId} di path. Mengembalikan download URL
+     * yang disimpan ke field `paymentProofUrl` pada Order/TableOrder.
+     */
+    suspend fun uploadPaymentProof(fileUri: Uri): Result<String> {
+        return try {
+            val uid = auth.currentUser?.uid
+                ?: return Result.failure(IllegalStateException("Sesi login tidak ditemukan. Silakan login ulang."))
+            val fileName = "${System.currentTimeMillis()}-bukti-bayar.jpg"
+            val ref = storage.reference.child("users/$uid/uploads/payment-proofs/$fileName")
+            ref.putFile(fileUri).await()
+            val url = ref.downloadUrl.await().toString()
+            Result.success(url)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error uploading payment proof", e)
+            Result.failure(e)
+        }
+    }
+
+    // -------------------------------------------------------------
     // POS Checkout with Batch Write (Section 7 & 9)
     // -------------------------------------------------------------
 
@@ -195,7 +254,16 @@ class UsahakiRepository(context: Context) {
         // terkunci (owner/admin/manager) ini datang dari pilihan Branch
         // Switcher mobile — null berarti "Pusat", BUKAN "semua cabang"
         // (transaksi harus tercatat di 1 lokasi spesifik).
-        operatingBranchId: String? = user.assignedBranchId
+        operatingBranchId: String? = user.assignedBranchId,
+        // Jenis pesanan F&B, sama seperti "Simpan Ke Antrian Dapur" di
+        // website: "dine_in" (meja), "no_table" (tanpa meja/panggil nama),
+        // "takeaway" (bungkus). Null untuk bisnis retail biasa.
+        orderType: String? = null,
+        selectedTable: DiningTable? = null,
+        customerName: String = "Pelanggan POS",
+        // Wajib diisi (URL Storage) kalau paymentMethod = "transfer" / "qris",
+        // sama seperti wajib upload PaymentProofCapture di website.
+        paymentProofUrl: String? = null
     ): Result<Order> {
         return try {
             val orderRef = db.collection("orders").document()
@@ -222,6 +290,10 @@ class UsahakiRepository(context: Context) {
                 status = "completed",
                 paymentStatus = "paid",
                 paymentMethod = paymentMethod,
+                paymentProofUrl = paymentProofUrl,
+                orderType = orderType,
+                tableId = selectedTable?.id,
+                tableName = selectedTable?.name,
                 createdAt = nowStr
             )
 
@@ -256,6 +328,52 @@ class UsahakiRepository(context: Context) {
                     val currentStock = cart.product.stock
                     val newStock = maxOf(0, currentStock - cart.qty)
                     batch.update(prodRef, "stock", newStock)
+                }
+            }
+
+            // Untuk pesanan F&B (meja/tanpa meja/bungkus), kirim juga ke
+            // antrian dapur ("tableorders") — sama seperti "Simpan Ke
+            // Antrian Dapur" di website — supaya layar Dapur & Antrian
+            // Publik tetap melihat pesanan ini, dan meja yang dipilih
+            // otomatis ditandai "occupied".
+            var tableOrderRef: com.google.firebase.firestore.DocumentReference? = null
+            if (orderType != null) {
+                tableOrderRef = db.collection("tableorders").document()
+                val queueNumber = ((System.currentTimeMillis() % 86400000L) / 10000L % 900L + 100L).toInt()
+                val orderCode = "MQ-${Random.nextInt(1000, 10000)}"
+                val tableItems = cartItems.map { cart ->
+                    com.example.data.model.TableOrderItem(
+                        productId = cart.product.id,
+                        name = cart.product.name,
+                        price = cart.unitPrice,
+                        qty = cart.qty,
+                        variant = cart.selectedVariant?.name,
+                        status = "done" // Sudah dibayar & selesai langsung di kasir mobile.
+                    )
+                }
+                val newTableOrder = TableOrder(
+                    id = tableOrderRef.id,
+                    businessId = user.businessId,
+                    branchId = selectedTable?.branchId ?: operatingBranchId,
+                    tableId = selectedTable?.id ?: "unassigned",
+                    tableName = selectedTable?.name ?: customerName,
+                    customerName = customerName,
+                    items = tableItems,
+                    totalAmount = totalAmount,
+                    queueNumber = queueNumber,
+                    orderCode = orderCode,
+                    orderType = orderType,
+                    paymentMethod = paymentMethod,
+                    paymentProofUrl = paymentProofUrl,
+                    status = "completed",
+                    paymentStatus = "paid",
+                    createdAt = nowStr
+                )
+                batch.set(tableOrderRef, newTableOrder)
+
+                if (selectedTable != null) {
+                    val tableRef = db.collection("tables").document(selectedTable.id)
+                    batch.update(tableRef, "status", "occupied")
                 }
             }
 

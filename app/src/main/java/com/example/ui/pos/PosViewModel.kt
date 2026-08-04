@@ -1,12 +1,15 @@
 package com.example.ui.pos
 
 import android.app.Application
+import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.Branch
+import com.example.data.model.Business
 import com.example.data.model.CartItem
 import com.example.data.model.Category
+import com.example.data.model.DiningTable
 import com.example.data.model.Order
 import com.example.data.model.Product
 import com.example.data.model.ProductVariant
@@ -27,6 +30,13 @@ sealed interface CheckoutState {
     data class Error(val message: String) : CheckoutState
 }
 
+sealed interface ProofUploadState {
+    object Idle : ProofUploadState
+    object Uploading : ProofUploadState
+    data class Success(val url: String) : ProofUploadState
+    data class Error(val message: String) : ProofUploadState
+}
+
 class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = UsahakiRepository(application)
@@ -44,6 +54,19 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _availableBranches = MutableStateFlow<List<Branch>>(emptyList())
     val availableBranches: StateFlow<List<Branch>> = _availableBranches.asStateFlow()
+
+    // Info bisnis (dipakai utk cek transactionMode "fnb" — hanya bisnis F&B
+    // yang menampilkan pilihan Meja/Tanpa Meja/Bungkus saat checkout, sama
+    // seperti di website).
+    private val _business = MutableStateFlow<Business?>(null)
+    val business: StateFlow<Business?> = _business.asStateFlow()
+
+    // Daftar meja aktif utk cabang yang sedang beroperasi (koleksi "tables").
+    private val _tables = MutableStateFlow<List<DiningTable>>(emptyList())
+    val tables: StateFlow<List<DiningTable>> = _tables.asStateFlow()
+
+    private val _proofUploadState = MutableStateFlow<ProofUploadState>(ProofUploadState.Idle)
+    val proofUploadState: StateFlow<ProofUploadState> = _proofUploadState.asStateFlow()
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
@@ -98,6 +121,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
             _currentUser.value = user
             _operatingBranchId.value = user.assignedBranchId
             observeData(user)
+            refreshTables(user.businessId, _operatingBranchId.value)
+
+            viewModelScope.launch {
+                _business.value = repository.fetchBusiness(user.businessId)
+            }
 
             val unlockedRoles = listOf("owner", "admin", "manager")
             if (user.role.lowercase() in unlockedRoles) {
@@ -105,6 +133,12 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                     _availableBranches.value = repository.getActiveBranches(user.businessId)
                 }
             }
+        }
+    }
+
+    private fun refreshTables(businessId: String, branchId: String?) {
+        viewModelScope.launch {
+            _tables.value = repository.getTables(businessId, branchId)
         }
     }
 
@@ -117,6 +151,7 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         val user = _currentUser.value ?: return
         _operatingBranchId.value = branchId
         observePastOrdersFor(user, branchId)
+        refreshTables(user.businessId, branchId)
     }
 
     private fun observeData(user: User) {
@@ -225,10 +260,40 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
         _cartItems.value = emptyList()
     }
 
-    fun processCheckout(paymentMethod: String) {
+    /** Unggah foto bukti bayar (transfer/QRIS) ke Firebase Storage sebelum checkout dikonfirmasi. */
+    fun uploadPaymentProof(uri: Uri) {
+        _proofUploadState.value = ProofUploadState.Uploading
+        viewModelScope.launch {
+            val result = repository.uploadPaymentProof(uri)
+            result.onSuccess { url ->
+                _proofUploadState.value = ProofUploadState.Success(url)
+            }.onFailure { err ->
+                _proofUploadState.value = ProofUploadState.Error(err.localizedMessage ?: "Gagal mengunggah bukti pembayaran.")
+            }
+        }
+    }
+
+    fun clearPaymentProof() {
+        _proofUploadState.value = ProofUploadState.Idle
+    }
+
+    fun processCheckout(
+        paymentMethod: String,
+        orderType: String? = null,
+        selectedTable: DiningTable? = null,
+        customerName: String = "Pelanggan POS",
+        paymentProofUrl: String? = null
+    ) {
         val user = _currentUser.value ?: return
         val currentCart = _cartItems.value
         if (currentCart.isEmpty()) return
+
+        // Bukti pembayaran wajib utk Transfer & QRIS, sama seperti di website
+        // (PaymentProofCapture) — supaya tetap ada arsip transaksi.
+        if (paymentMethod != "cash" && paymentProofUrl.isNullOrEmpty()) {
+            _checkoutState.value = CheckoutState.Error("Unggah bukti pembayaran terlebih dahulu untuk metode ${paymentMethod.uppercase()}.")
+            return
+        }
 
         val total = currentCart.sumOf { it.totalPrice }
         _checkoutState.value = CheckoutState.Processing
@@ -239,13 +304,21 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 cartItems = currentCart,
                 paymentMethod = paymentMethod,
                 totalAmount = total,
-                operatingBranchId = _operatingBranchId.value
+                operatingBranchId = _operatingBranchId.value,
+                orderType = orderType,
+                selectedTable = selectedTable,
+                customerName = customerName,
+                paymentProofUrl = paymentProofUrl
             )
 
             result.onSuccess { order ->
                 _checkoutState.value = CheckoutState.Success(order)
                 _lastCompletedOrder.value = order
                 _cartItems.value = emptyList()
+                _proofUploadState.value = ProofUploadState.Idle
+                if (selectedTable != null) {
+                    refreshTables(user.businessId, _operatingBranchId.value)
+                }
             }.onFailure { err ->
                 _checkoutState.value = CheckoutState.Error(err.localizedMessage ?: "Checkout gagal.")
             }

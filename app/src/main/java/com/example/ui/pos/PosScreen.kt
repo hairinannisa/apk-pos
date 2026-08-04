@@ -1,5 +1,7 @@
 package com.example.ui.pos
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,9 +25,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -323,11 +327,15 @@ fun PosScreen(
                     }
                 }
             } else {
+                // GridCells.Adaptive membuat jumlah kolom menyesuaikan lebar layar
+                // secara dinamis (HP kecil tetap 2 kolom, HP besar/tablet otomatis
+                // jadi 3-5 kolom) — sebelumnya Fixed(2) membuat setiap kartu produk
+                // melebar penuh & terlihat terlalu besar di layar lebar.
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Adaptive(minSize = 148.dp),
                     contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     items(products) { product ->
@@ -517,12 +525,26 @@ fun PosScreen(
 
     // Modal Dialog: Checkout Payment
     if (showCheckoutDialog) {
+        val business by posViewModel.business.collectAsState()
+        val tables by posViewModel.tables.collectAsState()
+        val proofUploadState by posViewModel.proofUploadState.collectAsState()
         CheckoutDialogClean(
             totalAmount = totalAmount,
             checkoutState = checkoutState,
+            isFnbBusiness = business?.transactionMode?.lowercase() == "fnb",
+            tables = tables,
+            proofUploadState = proofUploadState,
+            onPickProofImage = { uri -> posViewModel.uploadPaymentProof(uri) },
+            onClearProofImage = { posViewModel.clearPaymentProof() },
             onDismiss = { showCheckoutDialog = false },
-            onConfirmCheckout = { paymentMethod ->
-                posViewModel.processCheckout(paymentMethod)
+            onConfirmCheckout = { paymentMethod, orderType, selectedTable, customerName, proofUrl ->
+                posViewModel.processCheckout(
+                    paymentMethod = paymentMethod,
+                    orderType = orderType,
+                    selectedTable = selectedTable,
+                    customerName = customerName,
+                    paymentProofUrl = proofUrl
+                )
                 showCheckoutDialog = false
             }
         )
@@ -557,38 +579,49 @@ fun ProductCardClean(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, MinimalBorder, RoundedCornerShape(20.dp))
+            .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
             .clickable(enabled = !isOut) { onAddToCart() },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(12.dp)
+            modifier = Modifier.padding(10.dp)
         ) {
-            // Minimal Icon Square Container
+            // Foto produk (kalau ada). Fallback ke ikon kalau produk belum
+            // punya gambar yang diunggah di website.
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1.2f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .aspectRatio(1.15f)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Color(0xFFF0F4E9)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Restaurant,
-                    contentDescription = null,
-                    tint = GreenPrimary.copy(alpha = 0.5f),
-                    modifier = Modifier.size(36.dp)
-                )
+                val imageUrl = product.primaryImageUrl
+                if (!imageUrl.isNullOrEmpty()) {
+                    coil.compose.AsyncImage(
+                        model = imageUrl,
+                        contentDescription = product.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Restaurant,
+                        contentDescription = null,
+                        tint = GreenPrimary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = product.name,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 color = MinimalTextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -597,11 +630,11 @@ fun ProductCardClean(
             Text(
                 text = product.price.formatRupiah(),
                 fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 color = GreenPrimary
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -610,37 +643,37 @@ fun ProductCardClean(
             ) {
                 Text(
                     text = "Stok: $effectiveStock",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     color = MinimalTextSecondary
                 )
 
                 if (product.variants.isNotEmpty()) {
                     Text(
                         text = "${product.variants.size} Varian",
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         color = GreenPrimary,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Button(
                 onClick = onAddToCart,
                 enabled = !isOut,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(32.dp),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = GreenAccent,
                     contentColor = GreenAccentDark,
                     disabledContainerColor = MinimalBorder
                 ),
-                contentPadding = PaddingValues(vertical = 6.dp)
+                contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 Text(
                     text = if (isOut) "Habis" else "Tambah",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -726,14 +759,44 @@ fun CartItemRowClean(
 fun CheckoutDialogClean(
     totalAmount: Double,
     checkoutState: CheckoutState,
+    isFnbBusiness: Boolean,
+    tables: List<com.example.data.model.DiningTable>,
+    proofUploadState: ProofUploadState,
+    onPickProofImage: (android.net.Uri) -> Unit,
+    onClearProofImage: () -> Unit,
     onDismiss: () -> Unit,
-    onConfirmCheckout: (paymentMethod: String) -> Unit
+    onConfirmCheckout: (
+        paymentMethod: String,
+        orderType: String?,
+        selectedTable: com.example.data.model.DiningTable?,
+        customerName: String,
+        proofUrl: String?
+    ) -> Unit
 ) {
     var selectedMethod by remember { mutableStateOf("cash") }
     var cashInput by remember { mutableStateOf("") }
 
+    // Kategori pemesanan, sama seperti "Simpan Ke Antrian Dapur" di website:
+    // "table" (meja), "no_table" (tanpa meja/panggil nama), "takeaway" (bungkus).
+    // Hanya relevan & ditampilkan utk bisnis F&B.
+    var orderCategory by remember { mutableStateOf("table") }
+    var selectedTable by remember { mutableStateOf<com.example.data.model.DiningTable?>(null) }
+    var customerName by remember { mutableStateOf("Pelanggan POS") }
+
     val cashReceived = cashInput.toDoubleOrNull() ?: 0.0
     val change = cashReceived - totalAmount
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) onPickProofImage(uri)
+    }
+
+    val needsProof = selectedMethod != "cash"
+    val proofUrl = (proofUploadState as? ProofUploadState.Success)?.url
+    val isTableStepValid = !isFnbBusiness || orderCategory != "table" || selectedTable != null
+    val isProofStepValid = !needsProof || proofUrl != null
+    val isCashValid = selectedMethod != "cash" || cashReceived >= totalAmount
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -741,125 +804,355 @@ fun CheckoutDialogClean(
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight(0.92f)
                 .border(1.dp, MinimalBorder, RoundedCornerShape(24.dp))
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text(
-                    text = "Pembayaran Kasir",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MinimalTextPrimary
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Box(
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color(0xFFF0F4E9))
-                        .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
-                        .padding(16.dp),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Total Tagihan", fontSize = 12.sp, color = MinimalTextSecondary)
-                        Text(
-                            totalAmount.formatRupiah(),
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = GreenPrimary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("Metode Pembayaran", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("cash" to "Tunai", "qris" to "QRIS", "transfer" to "Transfer").forEach { (key, label) ->
-                        val isSelected = selectedMethod == key
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { selectedMethod = key },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
-                            )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else MinimalTextSecondary
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (selectedMethod == "cash") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = cashInput,
-                        onValueChange = { cashInput = it },
-                        label = { Text("Uang Diterima (Rp)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = GreenPrimary,
-                            unfocusedBorderColor = MinimalBorder
-                        )
+                    Text(
+                        text = "Pembayaran Kasir",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MinimalTextPrimary
                     )
 
-                    if (cashReceived > 0) {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFFF0F4E9))
+                            .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Total Tagihan", fontSize = 12.sp, color = MinimalTextSecondary)
+                            Text(
+                                totalAmount.formatRupiah(),
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = GreenPrimary
+                            )
+                        }
+                    }
+
+                    // --- Kategori Pemesanan: Meja / Tanpa Meja / Bungkus ---
+                    // Hanya ditampilkan utk bisnis F&B, sama seperti
+                    // SaveToKitchenModal di website (transactionMode === 'fnb').
+                    if (isFnbBusiness) {
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text("Jenis Pesanan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Kembalian:", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                if (change >= 0) change.formatRupiah() else "Kurang ${(-change).formatRupiah()}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (change >= 0) GreenPrimary else Color(0xFFDC2626)
+                            listOf(
+                                "table" to "Meja",
+                                "no_table" to "Tanpa Meja",
+                                "takeaway" to "Bungkus"
+                            ).forEach { (key, label) ->
+                                val isSelected = orderCategory == key
+                                Card(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            orderCategory = key
+                                            if (key != "table") selectedTable = null
+                                        },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
+                                    )
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Color.White else MinimalTextSecondary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (orderCategory == "table") {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            if (tables.isEmpty()) {
+                                Text(
+                                    "Belum ada data meja untuk cabang ini. Tambahkan meja lewat website terlebih dahulu.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFDC2626)
+                                )
+                            } else {
+                                Text("Pilih Meja", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MinimalTextSecondary)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                // Tinggi tetap (bukan Unspecified) — LazyVerticalGrid butuh
+                                // batas tinggi pasti karena sudah berada di dalam Column yang
+                                // scrollable; kalau tak dibatasi, akan crash "infinite height".
+                                // Meja yang jumlahnya sedikit tetap bisa discroll, tidak masalah.
+                                Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                                    LazyVerticalGrid(
+                                        columns = GridCells.Fixed(3),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        items(tables) { table ->
+                                            val isSelected = selectedTable?.id == table.id
+                                            val isOccupied = table.status == "occupied"
+                                            Card(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { selectedTable = table },
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = when {
+                                                        isSelected -> GreenPrimary
+                                                        isOccupied -> Color(0xFFFFE4E4)
+                                                        else -> Color(0xFFF1F5F9)
+                                                    }
+                                                )
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        table.name,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) Color.White else MinimalTextPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        if (isOccupied) "Terisi" else "Kosong",
+                                                        fontSize = 9.sp,
+                                                        color = if (isSelected) Color.White.copy(alpha = 0.85f) else MinimalTextSecondary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = customerName,
+                                onValueChange = { customerName = it },
+                                label = { Text(if (orderCategory == "takeaway") "Nama Pemesan (Bungkus)" else "Nama Dipanggil") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = GreenPrimary,
+                                    unfocusedBorderColor = MinimalBorder
+                                )
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    Text("Metode Pembayaran", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("cash" to "Tunai", "qris" to "QRIS", "transfer" to "Transfer").forEach { (key, label) ->
+                            val isSelected = selectedMethod == key
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        selectedMethod = key
+                                        if (key == "cash") onClearProofImage()
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
+                                )
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.White else MinimalTextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedMethod == "cash") {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = cashInput,
+                            onValueChange = { cashInput = it },
+                            label = { Text("Uang Diterima (Rp)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = GreenPrimary,
+                                unfocusedBorderColor = MinimalBorder
+                            )
+                        )
+
+                        if (cashReceived > 0) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Kembalian:", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text(
+                                    if (change >= 0) change.formatRupiah() else "Kurang ${(-change).formatRupiah()}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (change >= 0) GreenPrimary else Color(0xFFDC2626)
+                                )
+                            }
+                        }
+                    } else {
+                        // --- Upload Bukti Pembayaran (Transfer / QRIS) ---
+                        // Sebelumnya tidak ada sama sekali di APK, padahal
+                        // wajib di website (PaymentProofCapture).
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Bukti Pembayaran (${selectedMethod.uppercase()})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MinimalTextSecondary
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        when (proofUploadState) {
+                            is ProofUploadState.Success -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(Color(0xFFEFFBEE))
+                                        .border(1.dp, Color(0xFFBBE8B4), RoundedCornerShape(14.dp))
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    coil.compose.AsyncImage(
+                                        model = proofUploadState.url,
+                                        contentDescription = "Bukti pembayaran",
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(RoundedCornerShape(10.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Bukti tersimpan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E8E3E))
+                                        Text("Akan diarsipkan bersama transaksi ini.", fontSize = 10.sp, color = MinimalTextSecondary)
+                                    }
+                                    IconButton(onClick = { onClearProofImage() }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Hapus & unggah ulang", tint = MinimalTextSecondary)
+                                    }
+                                }
+                            }
+                            is ProofUploadState.Uploading -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(color = GreenPrimary, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Mengunggah bukti...", fontSize = 12.sp, color = MinimalTextSecondary)
+                                }
+                            }
+                            else -> {
+                                OutlinedButton(
+                                    onClick = { imagePickerLauncher.launch("image/*") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(70.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = GreenPrimary)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Unggah Foto Bukti Bayar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GreenPrimary)
+                                }
+                                if (proofUploadState is ProofUploadState.Error) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(proofUploadState.message, fontSize = 11.sp, color = Color(0xFFDC2626))
+                                }
+                            }
+                        }
+                    }
+
+                    if (checkoutState is CheckoutState.Error) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(checkoutState.message, fontSize = 12.sp, color = Color(0xFFDC2626), fontWeight = FontWeight.Medium)
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Button(
-                    onClick = { onConfirmCheckout(selectedMethod) },
-                    enabled = checkoutState !is CheckoutState.Processing && (selectedMethod != "cash" || cashReceived >= totalAmount),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenAccent,
-                        contentColor = GreenAccentDark
-                    )
-                ) {
-                    if (checkoutState is CheckoutState.Processing) {
-                        CircularProgressIndicator(color = GreenAccentDark, modifier = Modifier.size(20.dp))
-                    } else {
-                        Text("PROSES TRANSAKSI", fontWeight = FontWeight.Bold)
+                // Tombol proses tetap terlihat di bawah (di luar area scroll)
+                Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
+                    Button(
+                        onClick = {
+                            val resolvedOrderType = if (isFnbBusiness) {
+                                when (orderCategory) {
+                                    "table" -> "dine_in"
+                                    "takeaway" -> "takeaway"
+                                    else -> "no_table"
+                                }
+                            } else null
+                            onConfirmCheckout(
+                                selectedMethod,
+                                resolvedOrderType,
+                                if (isFnbBusiness && orderCategory == "table") selectedTable else null,
+                                customerName.ifBlank { "Pelanggan POS" },
+                                proofUrl
+                            )
+                        },
+                        enabled = checkoutState !is CheckoutState.Processing &&
+                            isCashValid && isTableStepValid && isProofStepValid,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = GreenAccent,
+                            contentColor = GreenAccentDark
+                        )
+                    ) {
+                        if (checkoutState is CheckoutState.Processing) {
+                            CircularProgressIndicator(color = GreenAccentDark, modifier = Modifier.size(20.dp))
+                        } else {
+                            Text("PROSES TRANSAKSI", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

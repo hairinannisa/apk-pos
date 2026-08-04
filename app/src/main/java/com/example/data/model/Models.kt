@@ -57,10 +57,20 @@ data class Product(
     val price: Double = 0.0,
     val sku: String? = null,
     val variants: List<ProductVariant> = emptyList(),
+    // Sama seperti field `images` di website (src/types/product.types.ts) —
+    // list URL Firebase Storage. Kita pakai gambar pertama sebagai thumbnail
+    // di grid POS. Sebelumnya field ini tidak ada di model Android sama
+    // sekali sehingga Firestore tidak pernah mengisinya dan gambar produk
+    // tidak pernah muncul di APK walau sudah diunggah lewat website.
+    val images: List<String> = emptyList(),
     val stock: Int = 0,
     val stockByBranch: Map<String, Int>? = null,
     val isActive: Boolean = true
 ) {
+    /** URL gambar utama produk (gambar pertama), atau null kalau belum ada gambar diunggah. */
+    val primaryImageUrl: String?
+        get() = images.firstOrNull()
+
     fun getEffectiveStock(branchId: String?, selectedVariant: ProductVariant? = null): Int {
         if (selectedVariant != null) {
             return selectedVariant.getEffectiveStock(branchId)
@@ -102,6 +112,12 @@ data class Order(
     val paymentStatus: String = "paid",
     val paymentMethod: String = "cash", // "cash" | "transfer" | "qris"
     val paymentProofUrl: String? = null,
+    // Jenis pesanan sama seperti TableOrderType di website: "dine_in" (meja),
+    // "no_table" (tanpa meja / panggil nama), "takeaway" (bungkus). Null =
+    // pesanan retail biasa (bukan bisnis F&B / tidak relevan).
+    val orderType: String? = null,
+    val tableId: String? = null,
+    val tableName: String? = null,
     val createdAt: String = ""
 )
 
@@ -117,6 +133,17 @@ data class Transaction(
     val method: String = "cash",
     val createdBy: String = "",
     val createdAt: String = ""
+)
+
+@IgnoreExtraProperties
+data class DiningTable(
+    val id: String = "",
+    val businessId: String = "",
+    val branchId: String? = null,
+    val name: String = "", // Contoh: "Meja 1", "VIP 2"
+    val code: String = "",
+    val capacity: Int? = null,
+    val status: String = "available" // "available" | "occupied"
 )
 
 @IgnoreExtraProperties
@@ -142,6 +169,13 @@ data class TableOrder(
     val items: List<TableOrderItem> = emptyList(),
     val totalAmount: Double = 0.0,
     val queueNumber: Int = 0,
+    val orderCode: String? = null,
+    val orderType: String? = "dine_in", // "dine_in" | "no_table" | "online" | "takeaway"
+    val paxCount: Int? = null,
+    val isCallByName: Boolean? = false,
+    val paymentMethod: String? = "cash", // "cash" | "transfer" | "qris"
+    val paymentProofUrl: String? = null,
+    val customerPhone: String? = null,
     val status: String = "pending", // "pending" | "preparing" | "completed" | "cancelled"
     val paymentStatus: String = "unpaid",
     val createdAt: String = ""
