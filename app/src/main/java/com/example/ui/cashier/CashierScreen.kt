@@ -33,7 +33,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Dialog
+import androidx.compose.ui.window.Dialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -386,7 +386,7 @@ private fun PayBillDialog(
                         }
                     } else {
                         Spacer(modifier = Modifier.height(12.dp))
-                        when (proofUploadState) {
+                        when (val proofState = proofUploadState) {
                             is ProofUploadState.Success -> {
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
@@ -396,7 +396,7 @@ private fun PayBillDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     coil.compose.AsyncImage(
-                                        model = proofUploadState.url,
+                                        model = proofState.url,
                                         contentDescription = null,
                                         modifier = Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)),
                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
