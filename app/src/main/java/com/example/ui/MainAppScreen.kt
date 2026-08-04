@@ -247,6 +247,7 @@ fun MainAppScreen(
  * terkunci (owner/admin/manager) yang punya cabang tambahan. Analog dari
  * Branch Switcher di website. Pilihan "Pusat" selalu ada di paling atas.
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun BranchSwitcherBar(
     currentLabel: String,
