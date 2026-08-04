@@ -1,10 +1,13 @@
 package com.example.ui.pos
 
+import android.content.res.Configuration
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.cashier.CashierScreen
 import com.example.ui.cashier.CashierViewModel
+import com.example.ui.components.BarcodeScannerDialog
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +45,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.PointOfSale
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
@@ -67,12 +72,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -84,6 +92,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.CartItem
+import com.example.data.model.Category
+import com.example.data.model.DiningTable
 import com.example.data.model.Order
 import com.example.data.model.Product
 import com.example.data.model.User
@@ -118,12 +128,30 @@ fun PosScreen(
     val variantProduct by posViewModel.variantSelectionProduct.collectAsState()
     val completedOrder by posViewModel.lastCompletedOrder.collectAsState()
     val checkoutState by posViewModel.checkoutState.collectAsState()
+    val saveQueueState by posViewModel.saveQueueState.collectAsState()
     val pastOrders by posViewModel.pastOrders.collectAsState()
+    val business by posViewModel.business.collectAsState()
+    val isFnbBusiness = business?.transactionMode?.lowercase() == "fnb"
+
+    // Jumlah tiap produk yang sudah masuk keranjang (dijumlah semua varian) —
+    // dipakai utk badge angka kecil di pojok kartu produk.
+    val cartQtyByProduct = remember(cartItems) {
+        cartItems.groupBy { it.product.id }.mapValues { entry -> entry.value.sumOf { it.qty } }
+    }
+
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    // Mode landscape (miring) di HP MAUPUN tablet — dideteksi dari orientasi
+    // layar saat ini, bukan dari ukuran layar, supaya konsisten di kedua
+    // jenis perangkat sesuai permintaan.
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var showCartSheet by remember { mutableStateOf(false) }
     var showCheckoutDialog by remember { mutableStateOf(false) }
+    var showSaveQueueDialog by remember { mutableStateOf(false) }
     var showHistoryDialog by remember { mutableStateOf(false) }
     var showCashierQueue by remember { mutableStateOf(false) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
 
     // Layar "Bayar Meja" (daftar tagihan belum/sudah dibayar dari antrian
     // dapur) ditampilkan sebagai pengganti layar Kasir biasa, bukan dialog
@@ -136,6 +164,20 @@ fun PosScreen(
             onBack = { showCashierQueue = false }
         )
         return
+    }
+
+    LaunchedEffect(saveQueueState) {
+        when (val state = saveQueueState) {
+            is SaveQueueState.Success -> {
+                Toast.makeText(context, "Pesanan disimpan ke antrian dapur!", Toast.LENGTH_SHORT).show()
+                showSaveQueueDialog = false
+                posViewModel.resetSaveQueueState()
+            }
+            is SaveQueueState.Error -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+            }
+            else -> Unit
+        }
     }
 
     val cartSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -189,7 +231,7 @@ fun PosScreen(
             )
         },
         bottomBar = {
-            if (cartItems.isNotEmpty()) {
+            if (!isLandscape && cartItems.isNotEmpty()) {
                 Surface(
                     color = MinimalBackground,
                     modifier = Modifier.padding(16.dp)
@@ -259,121 +301,105 @@ fun PosScreen(
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(MinimalBackground)
-        ) {
-            // Search Input
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { posViewModel.setSearchQuery(it) },
-                placeholder = { Text("Cari produk...", color = MinimalTextSecondary) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { posViewModel.setSearchQuery("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
-                        }
-                    }
-                },
+        if (isLandscape) {
+            // Mode miring (landscape) — baik di HP maupun tablet: produk di
+            // kiri, keranjang belanja SELALU terlihat sebagai panel tetap di
+            // kanan (bukan bottom sheet yang harus dibuka manual seperti di
+            // mode potret).
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(16.dp),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = GreenPrimary,
-                    unfocusedBorderColor = MinimalBorder,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                )
-            )
-
-            // Category Chips
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 12.dp)
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .background(MinimalBackground)
             ) {
-                item {
-                    FilterChip(
-                        selected = selectedCategory == null,
-                        onClick = { posViewModel.selectCategory(null) },
-                        label = { Text("Semua") },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = GreenPrimary,
-                            selectedLabelColor = Color.White,
-                            containerColor = MinimalBorder,
-                            labelColor = MinimalTextSecondary
-                        )
-                    )
-                }
-                items(categories) { cat ->
-                    FilterChip(
-                        selected = selectedCategory == cat.id,
-                        onClick = { posViewModel.selectCategory(cat.id) },
-                        label = { Text(cat.name) },
-                        shape = RoundedCornerShape(20.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = GreenPrimary,
-                            selectedLabelColor = Color.White,
-                            containerColor = MinimalBorder,
-                            labelColor = MinimalTextSecondary
-                        )
-                    )
-                }
-            }
+                ProductBrowseArea(
+                    modifier = Modifier.weight(1.4f),
+                    searchQuery = searchQuery,
+                    categories = categories,
+                    selectedCategory = selectedCategory,
+                    products = products,
+                    cartQtyByProduct = cartQtyByProduct,
+                    assignedBranchId = user.assignedBranchId,
+                    onSearchChange = { posViewModel.setSearchQuery(it) },
+                    onSelectCategory = { posViewModel.selectCategory(it) },
+                    onScanClick = { showBarcodeScanner = true },
+                    onAddToCart = { product -> posViewModel.addToCart(product) }
+                )
 
-            // Products Grid
-            if (products.isEmpty()) {
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(Color.White)
+                        .border(1.dp, MinimalBorder, RoundedCornerShape(0.dp))
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.PointOfSale,
-                            contentDescription = null,
-                            tint = MinimalBorder,
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Tidak ada produk ditemukan",
-                            color = MinimalTextSecondary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            } else {
-                // GridCells.Adaptive membuat jumlah kolom menyesuaikan lebar layar
-                // secara dinamis (HP kecil tetap 2 kolom, HP besar/tablet otomatis
-                // jadi 3-5 kolom) — sebelumnya Fixed(2) membuat setiap kartu produk
-                // melebar penuh & terlihat terlalu besar di layar lebar.
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 148.dp),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    items(products) { product ->
-                        val effectiveStock = product.getEffectiveStock(user.assignedBranchId)
-                        ProductCardClean(
-                            product = product,
-                            effectiveStock = effectiveStock,
-                            onAddToCart = { posViewModel.addToCart(product) }
-                        )
-                    }
+                    CartPanelContent(
+                        cartItems = cartItems,
+                        totalAmount = totalAmount,
+                        isFnbBusiness = isFnbBusiness,
+                        onIncrement = { item -> posViewModel.updateCartQty(item, 1) },
+                        onDecrement = { item -> posViewModel.updateCartQty(item, -1) },
+                        onClearCart = { posViewModel.clearCart() },
+                        onSave = { showSaveQueueDialog = true },
+                        onCheckout = { showCheckoutDialog = true },
+                        modifier = Modifier.padding(16.dp)
+                    )
                 }
             }
+        } else {
+            ProductBrowseArea(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .background(MinimalBackground),
+                searchQuery = searchQuery,
+                categories = categories,
+                selectedCategory = selectedCategory,
+                products = products,
+                cartQtyByProduct = cartQtyByProduct,
+                assignedBranchId = user.assignedBranchId,
+                onSearchChange = { posViewModel.setSearchQuery(it) },
+                onSelectCategory = { posViewModel.selectCategory(it) },
+                onScanClick = { showBarcodeScanner = true },
+                onAddToCart = { product -> posViewModel.addToCart(product) }
+            )
         }
+    }
+
+    // Pemindai Barcode — hasil pindai dicocokkan ke katalog produk lewat
+    // PosViewModel.lookupByBarcode (SKU varian → SKU produk → fallback ID),
+    // sama seperti BarcodeScanner.tsx di website.
+    if (showBarcodeScanner) {
+        BarcodeScannerDialog(
+            onDismiss = { showBarcodeScanner = false },
+            onBarcodeScanned = { code ->
+                val match = posViewModel.lookupByBarcode(code)
+                if (match != null) {
+                    val (product, variant) = match
+                    posViewModel.addToCart(product, variant)
+                    val label = variant?.let { "${product.name} (${it.name})" } ?: product.name
+                    Toast.makeText(context, "$label ditambahkan ke keranjang", Toast.LENGTH_SHORT).show()
+                    showBarcodeScanner = false
+                } else {
+                    Toast.makeText(context, "Barcode tidak dikenali di katalog produk.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    // Dialog "Simpan ke Antrian Dapur" — sama seperti SaveToKitchenModal di
+    // website: pilih jenis pesanan (Meja/Tanpa Meja/Bungkus) lalu simpan
+    // TANPA memproses pembayaran. Hanya relevan utk bisnis F&B.
+    if (showSaveQueueDialog) {
+        val tables by posViewModel.tables.collectAsState()
+        SaveToKitchenDialog(
+            tables = tables,
+            isSaving = saveQueueState is SaveQueueState.Saving,
+            onDismiss = { showSaveQueueDialog = false },
+            onConfirm = { orderType, selectedTable, customerName ->
+                posViewModel.saveToKitchen(orderType, selectedTable, customerName)
+            }
+        )
     }
 
     // Modal Bottom Sheet: Cart Details
@@ -383,86 +409,23 @@ fun PosScreen(
             sheetState = cartSheetState,
             containerColor = MinimalBackground
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Keranjang Pesanan",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MinimalTextPrimary
-                    )
-                    IconButton(onClick = { posViewModel.clearCart() }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Kosongkan Keranjang",
-                            tint = Color(0xFFDC2626)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(280.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(cartItems) { item ->
-                        CartItemRowClean(
-                            cartItem = item,
-                            onIncrement = { posViewModel.updateCartQty(item, 1) },
-                            onDecrement = { posViewModel.updateCartQty(item, -1) }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Total Bayar", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        totalAmount.formatRupiah(),
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = GreenPrimary
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Button(
-                    onClick = {
-                        showCartSheet = false
-                        showCheckoutDialog = true
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenAccent,
-                        contentColor = GreenAccentDark
-                    )
-                ) {
-                    Text(
-                        text = "LANJUT CHECKOUT",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+            CartPanelContent(
+                cartItems = cartItems,
+                totalAmount = totalAmount,
+                isFnbBusiness = isFnbBusiness,
+                onIncrement = { item -> posViewModel.updateCartQty(item, 1) },
+                onDecrement = { item -> posViewModel.updateCartQty(item, -1) },
+                onClearCart = { posViewModel.clearCart() },
+                onSave = {
+                    showCartSheet = false
+                    showSaveQueueDialog = true
+                },
+                onCheckout = {
+                    showCartSheet = false
+                    showCheckoutDialog = true
+                },
+                modifier = Modifier.padding(20.dp)
+            )
         }
     }
 
@@ -594,22 +557,471 @@ fun PosScreen(
 }
 
 @Composable
+fun ProductBrowseArea(
+    modifier: Modifier = Modifier,
+    searchQuery: String,
+    categories: List<Category>,
+    selectedCategory: String?,
+    products: List<Product>,
+    cartQtyByProduct: Map<String, Int>,
+    assignedBranchId: String?,
+    onSearchChange: (String) -> Unit,
+    onSelectCategory: (String?) -> Unit,
+    onScanClick: () -> Unit,
+    onAddToCart: (Product) -> Unit
+) {
+    Column(modifier = modifier) {
+        // Search Input + Tombol Pindai Barcode
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchChange,
+                placeholder = { Text("Cari produk...", color = MinimalTextSecondary) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { onSearchChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                        }
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = GreenPrimary,
+                    unfocusedBorderColor = MinimalBorder,
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
+                )
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(GreenPrimary)
+                    .clickable { onScanClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QrCodeScanner,
+                    contentDescription = "Pindai Barcode",
+                    tint = Color.White
+                )
+            }
+        }
+
+        // Category Chips
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 12.dp)
+        ) {
+            item {
+                FilterChip(
+                    selected = selectedCategory == null,
+                    onClick = { onSelectCategory(null) },
+                    label = { Text("Semua") },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = GreenPrimary,
+                        selectedLabelColor = Color.White,
+                        containerColor = MinimalBorder,
+                        labelColor = MinimalTextSecondary
+                    )
+                )
+            }
+            items(categories) { cat ->
+                FilterChip(
+                    selected = selectedCategory == cat.id,
+                    onClick = { onSelectCategory(cat.id) },
+                    label = { Text(cat.name) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = GreenPrimary,
+                        selectedLabelColor = Color.White,
+                        containerColor = MinimalBorder,
+                        labelColor = MinimalTextSecondary
+                    )
+                )
+            }
+        }
+
+        // Products Grid
+        if (products.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.PointOfSale,
+                        contentDescription = null,
+                        tint = MinimalBorder,
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Tidak ada produk ditemukan",
+                        color = MinimalTextSecondary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        } else {
+            // GridCells.Adaptive membuat jumlah kolom menyesuaikan lebar layar
+            // secara dinamis (HP kecil tetap 2 kolom, HP besar/tablet otomatis
+            // jadi 3-5 kolom) — sebelumnya Fixed(2) membuat setiap kartu produk
+            // melebar penuh & terlihat terlalu besar di layar lebar.
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 148.dp),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(products) { product ->
+                    val effectiveStock = product.getEffectiveStock(assignedBranchId)
+                    ProductCardClean(
+                        product = product,
+                        effectiveStock = effectiveStock,
+                        qtyInCart = cartQtyByProduct[product.id] ?: 0,
+                        onAddToCart = { onAddToCart(product) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Isi keranjang belanja (daftar item + total + tombol Simpan/Bayar) — dipakai
+ * bersama di bottom sheet (mode potret) MAUPUN panel sisi kanan tetap (mode
+ * landscape/miring), supaya perilakunya konsisten di kedua tata letak.
+ */
+@Composable
+fun CartPanelContent(
+    cartItems: List<CartItem>,
+    totalAmount: Double,
+    isFnbBusiness: Boolean,
+    onIncrement: (CartItem) -> Unit,
+    onDecrement: (CartItem) -> Unit,
+    onClearCart: () -> Unit,
+    onSave: () -> Unit,
+    onCheckout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Keranjang Pesanan",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = MinimalTextPrimary
+            )
+            IconButton(onClick = onClearCart) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Kosongkan Keranjang",
+                    tint = Color(0xFFDC2626)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (cartItems.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(180.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Keranjang masih kosong", fontSize = 13.sp, color = MinimalTextSecondary)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(cartItems) { item ->
+                    CartItemRowClean(
+                        cartItem = item,
+                        onIncrement = { onIncrement(item) },
+                        onDecrement = { onDecrement(item) }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Total Bayar", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(
+                totalAmount.formatRupiah(),
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold,
+                color = GreenPrimary
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Tombol dibuat sejajar (Row) dan ukurannya menyesuaikan isi teksnya
+        // sendiri (tidak dipaksa satu baris memanjang) — teks dibungkus rapi
+        // maksimal 2 baris supaya tombol tetap ringkas & responsif di layar
+        // sempit maupun lebar.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (isFnbBusiness) {
+                OutlinedButton(
+                    onClick = onSave,
+                    enabled = cartItems.isNotEmpty(),
+                    modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Simpan ke Antrian",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GreenPrimary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Button(
+                onClick = onCheckout,
+                enabled = cartItems.isNotEmpty(),
+                modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = GreenAccent,
+                    contentColor = GreenAccentDark
+                ),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Bayar Sekarang",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Dialog "Simpan ke Antrian Dapur" — sama seperti SaveToKitchenModal di
+ * website: pilih kategori pesanan lalu simpan tanpa memproses pembayaran
+ * sama sekali (pembayaran menyusul lewat layar "Bayar Meja").
+ */
+@Composable
+fun SaveToKitchenDialog(
+    tables: List<DiningTable>,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (orderType: String, selectedTable: DiningTable?, customerName: String) -> Unit
+) {
+    var orderCategory by remember { mutableStateOf("table") }
+    var selectedTable by remember { mutableStateOf<DiningTable?>(null) }
+    var customerName by remember { mutableStateOf("Pelanggan POS") }
+
+    val isValid = orderCategory != "table" || selectedTable != null
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, MinimalBorder, RoundedCornerShape(24.dp))
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    "Simpan ke Antrian Dapur",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MinimalTextPrimary
+                )
+                Text(
+                    "Pesanan masuk antrian dapur dulu, pembayaran diproses belakangan lewat menu \"Bayar Meja\".",
+                    fontSize = 12.sp,
+                    color = MinimalTextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Jenis Pesanan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("table" to "Meja", "no_table" to "Tanpa Meja", "takeaway" to "Bungkus").forEach { (key, label) ->
+                        val isSelected = orderCategory == key
+                        Card(
+                            modifier = Modifier.weight(1f).clickable {
+                                orderCategory = key
+                                if (key != "table") selectedTable = null
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9))
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    label,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else MinimalTextSecondary,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (orderCategory == "table") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (tables.isEmpty()) {
+                        Text("Belum ada data meja untuk cabang ini.", fontSize = 11.sp, color = Color(0xFFDC2626))
+                    } else {
+                        Text("Pilih Meja", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MinimalTextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(tables) { table ->
+                                    val isSelected = selectedTable?.id == table.id
+                                    val isOccupied = table.status == "occupied"
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().clickable { selectedTable = table },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = when {
+                                                isSelected -> GreenPrimary
+                                                isOccupied -> Color(0xFFFFE4E4)
+                                                else -> Color(0xFFF1F5F9)
+                                            }
+                                        )
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                table.name,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else MinimalTextPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                if (isOccupied) "Terisi" else "Kosong",
+                                                fontSize = 9.sp,
+                                                color = if (isSelected) Color.White.copy(alpha = 0.85f) else MinimalTextSecondary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = customerName,
+                        onValueChange = { customerName = it },
+                        label = { Text(if (orderCategory == "takeaway") "Nama Pemesan (Bungkus)" else "Nama Dipanggil") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = GreenPrimary,
+                            unfocusedBorderColor = MinimalBorder
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("Batal", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = {
+                            onConfirm(
+                                orderCategory,
+                                if (orderCategory == "table") selectedTable else null,
+                                customerName.ifBlank { "Pelanggan POS" }
+                            )
+                        },
+                        enabled = isValid && !isSaving,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GreenAccent, contentColor = GreenAccentDark)
+                    ) {
+                        if (isSaving) {
+                            CircularProgressIndicator(color = GreenAccentDark, modifier = Modifier.size(18.dp))
+                        } else {
+                            Text("Simpan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ProductCardClean(
     product: Product,
     effectiveStock: Int,
+    qtyInCart: Int = 0,
     onAddToCart: () -> Unit
 ) {
     val isOut = effectiveStock <= 0
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
-            .clickable(enabled = !isOut) { onAddToCart() },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
+                .clickable(enabled = !isOut) { onAddToCart() },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
         Column(
             modifier = Modifier.padding(10.dp)
         ) {
@@ -699,6 +1111,30 @@ fun ProductCardClean(
                 Text(
                     text = if (isOut) "Habis" else "Tambah",
                     fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        }
+
+        // Badge angka jumlah produk ini yang sudah ada di keranjang — muncul
+        // begitu produk diklik/ditambahkan, mengambang di pojok kanan-atas
+        // kartu, mirip badge notifikasi.
+        if (qtyInCart > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFDC2626))
+                    .border(1.5.dp, Color.White, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (qtyInCart > 99) "99+" else "$qtyInCart",
+                    color = Color.White,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                 )
             }

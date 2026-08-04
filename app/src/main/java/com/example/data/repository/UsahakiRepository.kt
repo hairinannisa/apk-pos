@@ -222,6 +222,72 @@ class UsahakiRepository(context: Context) {
         }
     }
 
+    /**
+     * Simpan pesanan ke antrian dapur TANPA memproses pembayaran — sama
+     * seperti tombol "Simpan" di SaveToKitchenModal pada website. Stok TIDAK
+     * dikurangi di sini (baru dikurangi saat benar-benar dibayar), dan tidak
+     * ada dokumen "orders"/"transactions" yang dibuat sampai kasir memproses
+     * pembayarannya lewat markTablePaid().
+     */
+    suspend fun saveOrderToKitchenQueue(
+        user: User,
+        cartItems: List<CartItem>,
+        operatingBranchId: String?,
+        orderType: String,
+        selectedTable: DiningTable?,
+        customerName: String
+    ): Result<TableOrder> {
+        return try {
+            val tableOrderRef = db.collection("tableorders").document()
+            val nowStr = currentIsoTimestamp()
+            val totalAmount = cartItems.sumOf { it.totalPrice }
+            val queueNumber = ((System.currentTimeMillis() % 86400000L) / 10000L % 900L + 100L).toInt()
+            val orderCode = "MQ-${Random.nextInt(1000, 10000)}"
+
+            val tableItems = cartItems.map { cart ->
+                TableOrderItem(
+                    productId = cart.product.id,
+                    name = cart.product.name,
+                    price = cart.unitPrice,
+                    qty = cart.qty,
+                    variant = cart.selectedVariant?.name,
+                    status = "pending"
+                )
+            }
+
+            val newTableOrder = TableOrder(
+                id = tableOrderRef.id,
+                businessId = user.businessId,
+                branchId = selectedTable?.branchId ?: operatingBranchId,
+                tableId = selectedTable?.id ?: "unassigned",
+                tableName = selectedTable?.name ?: customerName,
+                customerName = customerName,
+                items = tableItems,
+                totalAmount = totalAmount,
+                queueNumber = queueNumber,
+                orderCode = orderCode,
+                orderType = orderType,
+                isCallByName = orderType == "no_table",
+                status = "pending",
+                paymentStatus = "unpaid",
+                createdAt = nowStr
+            )
+
+            val batch = db.batch()
+            batch.set(tableOrderRef, newTableOrder)
+            if (selectedTable != null) {
+                val tableRef = db.collection("tables").document(selectedTable.id)
+                batch.update(tableRef, "status", "occupied")
+            }
+            batch.commit().await()
+
+            Result.success(newTableOrder)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving order to kitchen queue", e)
+            Result.failure(e)
+        }
+    }
+
     // -------------------------------------------------------------
     // POS Checkout with Batch Write (Section 7 & 9)
     // -------------------------------------------------------------

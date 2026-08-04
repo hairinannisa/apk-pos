@@ -37,6 +37,13 @@ sealed interface ProofUploadState {
     data class Error(val message: String) : ProofUploadState
 }
 
+sealed interface SaveQueueState {
+    object Idle : SaveQueueState
+    object Saving : SaveQueueState
+    object Success : SaveQueueState
+    data class Error(val message: String) : SaveQueueState
+}
+
 class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = UsahakiRepository(application)
@@ -96,6 +103,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _checkoutState = MutableStateFlow<CheckoutState>(CheckoutState.Idle)
     val checkoutState: StateFlow<CheckoutState> = _checkoutState.asStateFlow()
+
+    private val _saveQueueState = MutableStateFlow<SaveQueueState>(SaveQueueState.Idle)
+    val saveQueueState: StateFlow<SaveQueueState> = _saveQueueState.asStateFlow()
 
     // Filtered Products
     val filteredProducts: StateFlow<List<Product>> = combine(
@@ -323,6 +333,71 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
                 _checkoutState.value = CheckoutState.Error(err.localizedMessage ?: "Checkout gagal.")
             }
         }
+    }
+
+    /**
+     * Simpan pesanan ke antrian dapur tanpa membayar dulu — sama seperti
+     * tombol "Simpan" (Simpan ke Antrian Dapur) di website. Kasir bisa
+     * memprosesnya belakangan lewat layar "Bayar Meja".
+     */
+    fun saveToKitchen(
+        orderType: String,
+        selectedTable: DiningTable? = null,
+        customerName: String = "Pelanggan POS"
+    ) {
+        val user = _currentUser.value ?: return
+        val currentCart = _cartItems.value
+        if (currentCart.isEmpty()) return
+
+        _saveQueueState.value = SaveQueueState.Saving
+        viewModelScope.launch {
+            val result = repository.saveOrderToKitchenQueue(
+                user = user,
+                cartItems = currentCart,
+                operatingBranchId = _operatingBranchId.value,
+                orderType = orderType,
+                selectedTable = selectedTable,
+                customerName = customerName
+            )
+            result.onSuccess {
+                _saveQueueState.value = SaveQueueState.Success
+                _cartItems.value = emptyList()
+                if (selectedTable != null) {
+                    refreshTables(user.businessId, _operatingBranchId.value)
+                }
+            }.onFailure { err ->
+                _saveQueueState.value = SaveQueueState.Error(err.localizedMessage ?: "Gagal menyimpan ke antrian dapur.")
+            }
+        }
+    }
+
+    fun resetSaveQueueState() {
+        _saveQueueState.value = SaveQueueState.Idle
+    }
+
+    /**
+     * Cocokkan kode barcode/QR hasil pindai dengan katalog produk — meniru
+     * persis logika `productBarcodes` di BarcodeScanner.tsx pada website:
+     * utamakan SKU varian, lalu SKU produk, lalu 8 karakter awal ID produk
+     * sebagai fallback (produk lama yang belum diberi SKU).
+     */
+    fun lookupByBarcode(code: String): Pair<Product, ProductVariant?>? {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return null
+
+        for (product in _rawProducts.value) {
+            if (product.variants.isNotEmpty()) {
+                val matchedVariant = product.variants.firstOrNull {
+                    !it.sku.isNullOrBlank() && it.sku.equals(trimmed, ignoreCase = true)
+                }
+                if (matchedVariant != null) return product to matchedVariant
+            } else {
+                val fallbackCode = product.sku?.takeIf { it.isNotBlank() }
+                    ?: product.id.take(8).uppercase()
+                if (fallbackCode.equals(trimmed, ignoreCase = true)) return product to null
+            }
+        }
+        return null
     }
 
     fun dismissReceiptDialog() {
