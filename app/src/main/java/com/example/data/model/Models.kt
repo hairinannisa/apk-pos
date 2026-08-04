@@ -132,15 +132,6 @@ data class TableOrderItem(
 )
 
 @IgnoreExtraProperties
-data class Branch(
-    val id: String = "",
-    val businessId: String = "",
-    val name: String = "",
-    val code: String = "",
-    val isActive: Boolean = true
-)
-
-@IgnoreExtraProperties
 data class TableOrder(
     val id: String = "",
     val businessId: String = "",
