@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.cashier.CashierScreen
 import com.example.ui.cashier.CashierViewModel
 import com.example.ui.components.BarcodeScannerDialog
+import com.example.ui.components.EmbeddedBarcodeScannerCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -312,80 +313,89 @@ fun PosScreen(
                     .padding(paddingValues)
                     .background(MinimalBackground)
             ) {
-                ProductBrowseArea(
-                    modifier = Modifier.weight(1.4f),
-                    searchQuery = searchQuery,
-                    categories = categories,
-                    selectedCategory = selectedCategory,
-                    products = products,
-                    cartQtyByProduct = cartQtyByProduct,
-                    assignedBranchId = user.assignedBranchId,
-                    onSearchChange = { posViewModel.setSearchQuery(it) },
-                    onSelectCategory = { posViewModel.selectCategory(it) },
-                    onScanClick = { showBarcodeScanner = true },
-                    onAddToCart = { product -> posViewModel.addToCart(product) }
-                )
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .background(Color.White)
-                        .border(1.dp, MinimalBorder, RoundedCornerShape(0.dp))
-                ) {
-                    CartPanelContent(
-                        cartItems = cartItems,
-                        totalAmount = totalAmount,
-                        isFnbBusiness = isFnbBusiness,
-                        onIncrement = { item -> posViewModel.updateCartQty(item, 1) },
-                        onDecrement = { item -> posViewModel.updateCartQty(item, -1) },
-                        onClearCart = { posViewModel.clearCart() },
-                        onSave = { showSaveQueueDialog = true },
-                        onCheckout = { showCheckoutDialog = true },
-                        modifier = Modifier.padding(16.dp)
-                    )
-                }
-            }
-        } else {
-            ProductBrowseArea(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .background(MinimalBackground),
-                searchQuery = searchQuery,
-                categories = categories,
-                selectedCategory = selectedCategory,
-                products = products,
-                cartQtyByProduct = cartQtyByProduct,
-                assignedBranchId = user.assignedBranchId,
-                onSearchChange = { posViewModel.setSearchQuery(it) },
-                onSelectCategory = { posViewModel.selectCategory(it) },
-                onScanClick = { showBarcodeScanner = true },
-                onAddToCart = { product -> posViewModel.addToCart(product) }
-            )
-        }
-    }
-
-    // Pemindai Barcode — hasil pindai dicocokkan ke katalog produk lewat
-    // PosViewModel.lookupByBarcode (SKU varian → SKU produk → fallback ID),
-    // sama seperti BarcodeScanner.tsx di website.
-    if (showBarcodeScanner) {
-        BarcodeScannerDialog(
-            onDismiss = { showBarcodeScanner = false },
-            onBarcodeScanned = { code ->
+            val handleBarcodeScanned: (String) -> Unit = { code ->
                 val match = posViewModel.lookupByBarcode(code)
                 if (match != null) {
                     val (product, variant) = match
                     posViewModel.addToCart(product, variant)
                     val label = variant?.let { "${product.name} (${it.name})" } ?: product.name
                     Toast.makeText(context, "$label ditambahkan ke keranjang", Toast.LENGTH_SHORT).show()
-                    showBarcodeScanner = false
                 } else {
-                    Toast.makeText(context, "Barcode tidak dikenali di katalog produk.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Barcode '$code' tidak ditemukan di katalog.", Toast.LENGTH_SHORT).show()
                 }
             }
+
+            ProductBrowseArea(
+                modifier = Modifier.weight(1.4f),
+                searchQuery = searchQuery,
+                categories = categories,
+                selectedCategory = selectedCategory,
+                products = products,
+                cartQtyByProduct = cartQtyByProduct,
+                assignedBranchId = user.assignedBranchId,
+                showBarcodeScanner = showBarcodeScanner,
+                onSearchChange = { posViewModel.setSearchQuery(it) },
+                onSelectCategory = { posViewModel.selectCategory(it) },
+                onScanClick = { showBarcodeScanner = !showBarcodeScanner },
+                onDismissScanner = { showBarcodeScanner = false },
+                onBarcodeScanned = handleBarcodeScanned,
+                onAddToCart = { product -> posViewModel.addToCart(product) }
+            )
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(Color.White)
+                    .border(1.dp, MinimalBorder, RoundedCornerShape(0.dp))
+            ) {
+                CartPanelContent(
+                    cartItems = cartItems,
+                    totalAmount = totalAmount,
+                    isFnbBusiness = isFnbBusiness,
+                    onIncrement = { item -> posViewModel.updateCartQty(item, 1) },
+                    onDecrement = { item -> posViewModel.updateCartQty(item, -1) },
+                    onClearCart = { posViewModel.clearCart() },
+                    onSave = { showSaveQueueDialog = true },
+                    onCheckout = { showCheckoutDialog = true },
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+    } else {
+        val handleBarcodeScanned: (String) -> Unit = { code ->
+            val match = posViewModel.lookupByBarcode(code)
+            if (match != null) {
+                val (product, variant) = match
+                posViewModel.addToCart(product, variant)
+                val label = variant?.let { "${product.name} (${it.name})" } ?: product.name
+                Toast.makeText(context, "$label ditambahkan ke keranjang", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Barcode '$code' tidak ditemukan di katalog.", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        ProductBrowseArea(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(MinimalBackground),
+            searchQuery = searchQuery,
+            categories = categories,
+            selectedCategory = selectedCategory,
+            products = products,
+            cartQtyByProduct = cartQtyByProduct,
+            assignedBranchId = user.assignedBranchId,
+            showBarcodeScanner = showBarcodeScanner,
+            onSearchChange = { posViewModel.setSearchQuery(it) },
+            onSelectCategory = { posViewModel.selectCategory(it) },
+            onScanClick = { showBarcodeScanner = !showBarcodeScanner },
+            onDismissScanner = { showBarcodeScanner = false },
+            onBarcodeScanned = handleBarcodeScanned,
+            onAddToCart = { product -> posViewModel.addToCart(product) }
         )
     }
+}
 
     // Dialog "Simpan ke Antrian Dapur" — sama seperti SaveToKitchenModal di
     // website: pilih jenis pesanan (Meja/Tanpa Meja/Bungkus) lalu simpan
@@ -565,9 +575,12 @@ fun ProductBrowseArea(
     products: List<Product>,
     cartQtyByProduct: Map<String, Int>,
     assignedBranchId: String?,
+    showBarcodeScanner: Boolean = false,
     onSearchChange: (String) -> Unit,
     onSelectCategory: (String?) -> Unit,
     onScanClick: () -> Unit,
+    onDismissScanner: () -> Unit = {},
+    onBarcodeScanned: (String) -> Unit = {},
     onAddToCart: (Product) -> Unit
 ) {
     Column(modifier = modifier) {
@@ -607,7 +620,7 @@ fun ProductBrowseArea(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(GreenPrimary)
+                    .background(if (showBarcodeScanner) GreenAccentDark else GreenPrimary)
                     .clickable { onScanClick() },
                 contentAlignment = Alignment.Center
             ) {
@@ -617,6 +630,15 @@ fun ProductBrowseArea(
                     tint = Color.White
                 )
             }
+        }
+
+        // Card Pemindai Barcode Embedded (saat aktif, tidak menutupi keranjang / katalog)
+        if (showBarcodeScanner) {
+            EmbeddedBarcodeScannerCard(
+                onDismiss = onDismissScanner,
+                onBarcodeScanned = onBarcodeScanned
+            )
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         // Category Chips

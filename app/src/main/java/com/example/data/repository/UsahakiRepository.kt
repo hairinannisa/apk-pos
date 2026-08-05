@@ -255,21 +255,33 @@ class UsahakiRepository(context: Context) {
                 )
             }
 
+            val mappedOrderType = when (orderType) {
+                "no_table" -> "takeaway"
+                "table" -> "dine_in"
+                "dine_in", "online", "takeaway" -> orderType
+                else -> "dine_in"
+            }
+            val isCallByName = (orderType == "no_table")
+            val effectiveCustomerName = if (customerName.isNotBlank()) customerName else "Pelanggan POS"
+            val effectiveTableId = if (selectedTable != null) selectedTable.id else "unassigned"
+            val effectiveTableName = if (selectedTable != null) selectedTable.name else effectiveCustomerName
+
             val newTableOrder = TableOrder(
                 id = tableOrderRef.id,
                 businessId = user.businessId,
                 branchId = selectedTable?.branchId ?: operatingBranchId,
-                tableId = selectedTable?.id ?: "unassigned",
-                tableName = selectedTable?.name ?: customerName,
-                customerName = customerName,
+                tableId = effectiveTableId,
+                tableName = effectiveTableName,
+                customerName = effectiveCustomerName,
                 items = tableItems,
                 totalAmount = totalAmount,
                 queueNumber = queueNumber,
                 orderCode = orderCode,
-                orderType = orderType,
-                isCallByName = orderType == "no_table",
+                orderType = mappedOrderType,
+                isCallByName = isCallByName,
                 status = "pending",
                 paymentStatus = "unpaid",
+                completedAt = null,
                 createdAt = nowStr
             )
 
@@ -337,6 +349,30 @@ class UsahakiRepository(context: Context) {
             val transactionRef = db.collection("transactions").document()
             val nowStr = currentIsoTimestamp()
 
+            val mappedOrderType = when (orderType) {
+                "no_table" -> "takeaway"
+                "table" -> "dine_in"
+                "dine_in", "online", "takeaway" -> orderType
+                else -> orderType
+            }
+            val isCallByName = (orderType == "no_table")
+            val effectiveCustomerName = if (customerName.isNotBlank()) customerName else "Pelanggan POS"
+            val effectiveTableId = selectedTable?.id ?: "unassigned"
+            val effectiveTableName = selectedTable?.name ?: effectiveCustomerName
+
+            val normalizedMethod = when (paymentMethod.lowercase()) {
+                "cash" -> "cash"
+                "qris" -> "qris"
+                "edc" -> "edc"
+                "transfer" -> "transfer"
+                else -> "transfer"
+            }
+            val orderPaymentMethod = when (normalizedMethod) {
+                "cash" -> "cash"
+                "qris" -> "qris"
+                else -> "transfer"
+            }
+
             val orderItems = cartItems.map { cart ->
                 OrderItem(
                     productId = cart.product.id,
@@ -356,14 +392,12 @@ class UsahakiRepository(context: Context) {
                 totalAmount = totalAmount,
                 status = "completed",
                 paymentStatus = "paid",
-                paymentMethod = paymentMethod,
+                paymentMethod = orderPaymentMethod,
                 paymentProofUrl = paymentProofUrl,
-                orderType = orderType,
-                tableId = selectedTable?.id,
-                tableName = selectedTable?.name,
                 createdAt = nowStr
             )
 
+            val creatorId = if (user.id.isNotBlank()) user.id else if (user.name.isNotBlank()) user.name else "kasir"
             val newTransaction = Transaction(
                 id = transactionRef.id,
                 businessId = user.businessId,
@@ -372,8 +406,8 @@ class UsahakiRepository(context: Context) {
                 type = "income",
                 category = "penjualan",
                 amount = totalAmount,
-                method = paymentMethod,
-                createdBy = user.id,
+                method = normalizedMethod,
+                createdBy = creatorId.take(100),
                 createdAt = nowStr
             )
 
@@ -381,31 +415,20 @@ class UsahakiRepository(context: Context) {
             batch.set(orderRef, newOrder)
             batch.set(transactionRef, newTransaction)
 
-            // Stock reduction logic per branch as mandated in Section 7
+            // Stock reduction logic
             for (cart in cartItems) {
                 val prodRef = db.collection("products").document(cart.product.id)
-
-                if (!operatingBranchId.isNullOrEmpty()) {
-                    // Update stockByBranch.<branchId> using dot path
-                    val currentBranchStock = cart.product.getEffectiveStock(operatingBranchId, cart.selectedVariant)
-                    val newStock = maxOf(0, currentBranchStock - cart.qty)
-                    batch.update(prodRef, "stockByBranch.$operatingBranchId", newStock)
-                } else {
-                    // Central stock update
-                    val currentStock = cart.product.stock
-                    val newStock = maxOf(0, currentStock - cart.qty)
-                    batch.update(prodRef, "stock", newStock)
-                }
+                val currentStock = cart.product.stock
+                val newStock = maxOf(0, currentStock - cart.qty)
+                batch.update(prodRef, "stock", newStock)
             }
 
-            // Untuk pesanan F&B (meja/tanpa meja/bungkus), kirim juga ke
-            // antrian dapur ("tableorders") — sama seperti "Simpan Ke
-            // Antrian Dapur" di website — supaya layar Dapur & Antrian
-            // Publik tetap melihat pesanan ini, dan meja yang dipilih
-            // otomatis ditandai "occupied".
-            var tableOrderRef: com.google.firebase.firestore.DocumentReference? = null
-            if (orderType != null) {
-                tableOrderRef = db.collection("tableorders").document()
+            var createdTableOrderRef: com.google.firebase.firestore.DocumentReference? = null
+
+            // Untuk pesanan F&B (meja/tanpa meja/bungkus), kirim juga ke antrian dapur ("tableorders")
+            if (mappedOrderType != null) {
+                val tableOrderRef = db.collection("tableorders").document()
+                createdTableOrderRef = tableOrderRef
                 val queueNumber = ((System.currentTimeMillis() % 86400000L) / 10000L % 900L + 100L).toInt()
                 val orderCode = "MQ-${Random.nextInt(1000, 10000)}"
                 val tableItems = cartItems.map { cart ->
@@ -422,18 +445,20 @@ class UsahakiRepository(context: Context) {
                     id = tableOrderRef.id,
                     businessId = user.businessId,
                     branchId = selectedTable?.branchId ?: operatingBranchId,
-                    tableId = selectedTable?.id ?: "unassigned",
-                    tableName = selectedTable?.name ?: customerName,
-                    customerName = customerName,
+                    tableId = effectiveTableId,
+                    tableName = effectiveTableName,
+                    customerName = effectiveCustomerName,
                     items = tableItems,
                     totalAmount = totalAmount,
                     queueNumber = queueNumber,
                     orderCode = orderCode,
-                    orderType = orderType,
-                    paymentMethod = paymentMethod,
+                    orderType = mappedOrderType,
+                    isCallByName = isCallByName,
+                    paymentMethod = normalizedMethod,
                     paymentProofUrl = paymentProofUrl,
-                    status = "completed",
-                    paymentStatus = "paid",
+                    status = "pending",
+                    paymentStatus = "unpaid",
+                    completedAt = null,
                     createdAt = nowStr
                 )
                 batch.set(tableOrderRef, newTableOrder)
@@ -445,6 +470,22 @@ class UsahakiRepository(context: Context) {
             }
 
             batch.commit().await()
+
+            // Update status ke completed & paid untuk tableorder yang baru saja dibuat & di-commit
+            if (createdTableOrderRef != null) {
+                try {
+                    createdTableOrderRef.update(
+                        mapOf(
+                            "status" to "completed",
+                            "paymentStatus" to "paid",
+                            "completedAt" to nowStr
+                        )
+                    ).await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Table order set to paid post-commit warning: ${e.message}")
+                }
+            }
+
             Result.success(newOrder)
         } catch (e: Exception) {
             Log.e(TAG, "Error processing checkout batch", e)
@@ -742,18 +783,32 @@ class UsahakiRepository(context: Context) {
         return try {
             val batch = db.batch()
             val nowStr = currentIsoTimestamp()
-            val normalizedMethod = if (paymentMethod == "qris") "transfer" else paymentMethod
+            val normalizedMethod = when (paymentMethod.lowercase()) {
+                "cash" -> "cash"
+                "qris" -> "qris"
+                "edc" -> "edc"
+                "transfer" -> "transfer"
+                else -> "transfer"
+            }
+            val orderPaymentMethod = when (normalizedMethod) {
+                "cash" -> "cash"
+                "qris" -> "qris"
+                else -> "transfer"
+            }
 
             ordersToPay.forEach { order ->
                 val orderRef = db.collection("tableorders").document(order.id)
                 val updateMap = mutableMapOf<String, Any?>(
+                    "status" to "completed",
                     "paymentStatus" to "paid",
-                    "paymentMethod" to normalizedMethod
+                    "paymentMethod" to normalizedMethod,
+                    "completedAt" to nowStr
                 )
                 if (!paymentProofUrl.isNullOrEmpty()) updateMap["paymentProofUrl"] = paymentProofUrl
                 batch.update(orderRef, updateMap)
 
                 val txRef = db.collection("transactions").document()
+                val creatorName = cashierName.ifBlank { "Kasir" }.take(100)
                 val newTransaction = Transaction(
                     id = txRef.id,
                     businessId = businessId,
@@ -763,7 +818,7 @@ class UsahakiRepository(context: Context) {
                     category = "penjualan",
                     amount = order.totalAmount,
                     method = normalizedMethod,
-                    createdBy = cashierName,
+                    createdBy = creatorName,
                     createdAt = nowStr
                 )
                 batch.set(txRef, newTransaction)
@@ -786,11 +841,8 @@ class UsahakiRepository(context: Context) {
                     totalAmount = order.totalAmount,
                     status = "completed",
                     paymentStatus = "paid",
-                    paymentMethod = normalizedMethod,
+                    paymentMethod = orderPaymentMethod,
                     paymentProofUrl = paymentProofUrl,
-                    orderType = order.orderType,
-                    tableId = order.tableId,
-                    tableName = order.tableName,
                     createdAt = nowStr
                 )
                 batch.set(posOrderRef, posOrder)

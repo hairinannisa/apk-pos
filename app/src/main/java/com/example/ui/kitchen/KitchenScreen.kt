@@ -690,7 +690,7 @@ private fun CancelledOrderCard(order: TableOrder, onReactivate: () -> Unit) {
 }
 
 @Composable
-private fun CancelOrderDialog(
+internal fun CancelOrderDialog(
     order: TableOrder,
     onConfirm: (reason: String?) -> Unit,
     onDismiss: () -> Unit
@@ -733,7 +733,7 @@ private fun CancelOrderDialog(
 }
 
 @Composable
-private fun AddItemsDialog(
+internal fun AddItemsDialog(
     order: TableOrder,
     products: List<Product>,
     categories: List<Category>,

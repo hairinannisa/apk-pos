@@ -12,23 +12,35 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FlashOff
-import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -45,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -53,25 +66,20 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.example.ui.theme.GreenPrimary
 import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
 
 /**
- * Layar pindai barcode full-screen memakai CameraX + ML Kit — fungsinya
- * sepadan dengan BarcodeScanner.tsx di website (yang memakai Quagga di
- * browser): kamera belakang aktif terus, tiap frame dianalisis, begitu ada
- * barcode format umum retail (EAN-13/EAN-8/UPC-A/UPC-E/Code128) terbaca,
- * kodenya dikirim ke pemanggil lewat [onBarcodeScanned].
- *
- * Pemanggil (PosScreen) yang bertanggung jawab mencocokkan kode ini ke
- * katalog produk (lihat PosViewModel.lookupByBarcode) supaya file ini tetap
- * murni soal kamera & deteksi, tidak bergantung pada data produk.
+ * Komponen pemindai barcode embedded (non-fullscreen) persis seperti tampilan di website dashboard:
+ * Memiliki header "Kamera Barcode Scanner" + "Tutup X", sub-card "Scan Barcode / SKU Kamera",
+ * live camera preview box hitam kecil dengan bingkai kuning dan sinar laser merah,
+ * serta opsi input manual barcode / SKU di bagian bawah.
  */
 @Composable
-fun BarcodeScannerDialog(
+fun EmbeddedBarcodeScannerCard(
     onDismiss: () -> Unit,
-    onBarcodeScanned: (String) -> Unit
+    onBarcodeScanned: (String) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
@@ -84,66 +92,276 @@ fun BarcodeScannerDialog(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
 
+    var isCameraActive by remember { mutableStateOf(true) }
+    var manualCode by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            if (hasCameraPermission) {
-                CameraPreviewWithAnalyzer(
-                    onBarcodeScanned = onBarcodeScanned
-                )
-
-                // Bingkai pemindaian di tengah layar, murni visual.
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .fillMaxWidth(0.8f)
-                        .aspectRatio(1.6f)
-                        .border(3.dp, GreenPrimary, RoundedCornerShape(16.dp))
-                )
-
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
+                .padding(14.dp)
+        ) {
+            // Header Utama Card: Judul + Tombol Tutup
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "Arahkan kamera ke barcode produk",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(top = 130.dp)
+                    text = "Kamera Barcode Scanner",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFF1E293B)
                 )
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Izin kamera diperlukan untuk memindai barcode.",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
+                        text = "Tutup",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF64748B)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Tutup",
+                        tint = Color(0xFF64748B),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Sub-card Kuning / Amber Container
             Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFBEB)),
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(20.dp),
-                shape = RoundedCornerShape(50),
-                colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.5f))
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(12.dp))
             ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Tutup Pemindai", tint = Color.White)
+                Column(modifier = Modifier.padding(12.dp)) {
+                    // Header Sub-card
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                tint = Color(0xFFD97706),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Scan Barcode / SKU Kamera",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF78350F)
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                if (!hasCameraPermission) {
+                                    permissionLauncher.launch(Manifest.permission.CAMERA)
+                                } else {
+                                    isCameraActive = !isCameraActive
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFD97706),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CameraAlt,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isCameraActive && hasCameraPermission) "Scan Kamera" else "Aktifkan Kamera",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Kotak Preview Kamera Hitam
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (hasCameraPermission && isCameraActive) {
+                            CameraPreviewWithAnalyzer(
+                                onBarcodeScanned = onBarcodeScanned
+                            )
+
+                            // Frame Overlay Kuning
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .height(90.dp)
+                                    .border(2.dp, Color(0xFFF59E0B), RoundedCornerShape(12.dp))
+                            )
+
+                            // Sinar Laser Merah Pemindai
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .height(1.5.dp)
+                                    .background(Color(0xFFEF4444).copy(alpha = 0.85f))
+                            )
+                        } else {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (!hasCameraPermission) {
+                                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                                        } else {
+                                            isCameraActive = true
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFD97706)
+                                    ),
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Aktifkan Kamera Scan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Input Manual Barcode / SKU
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = manualCode,
+                            onValueChange = { manualCode = it },
+                            placeholder = { Text("Ketik Barcode / SKU lalu Enter...", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Keyboard,
+                                    contentDescription = null,
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (manualCode.isNotBlank()) {
+                                        onBarcodeScanned(manualCode.trim())
+                                        manualCode = ""
+                                    }
+                                }
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = Color(0xFFD97706),
+                                unfocusedBorderColor = Color(0xFFCBD5E1)
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Button(
+                            onClick = {
+                                if (manualCode.isNotBlank()) {
+                                    onBarcodeScanned(manualCode.trim())
+                                    manualCode = ""
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0F172A),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.height(48.dp)
+                        ) {
+                            Text("Scan", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun BarcodeScannerDialog(
+    onDismiss: () -> Unit,
+    onBarcodeScanned: (String) -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center
+        ) {
+            EmbeddedBarcodeScannerCard(
+                onDismiss = onDismiss,
+                onBarcodeScanned = onBarcodeScanned,
+                modifier = Modifier.fillMaxWidth(0.95f)
+            )
         }
     }
 }

@@ -112,12 +112,9 @@ data class Order(
     val paymentStatus: String = "paid",
     val paymentMethod: String = "cash", // "cash" | "transfer" | "qris"
     val paymentProofUrl: String? = null,
-    // Jenis pesanan sama seperti TableOrderType di website: "dine_in" (meja),
-    // "no_table" (tanpa meja / panggil nama), "takeaway" (bungkus). Null =
-    // pesanan retail biasa (bukan bisnis F&B / tidak relevan).
-    val orderType: String? = null,
-    val tableId: String? = null,
-    val tableName: String? = null,
+    @get:com.google.firebase.firestore.Exclude val orderType: String? = null,
+    @get:com.google.firebase.firestore.Exclude val tableId: String? = null,
+    @get:com.google.firebase.firestore.Exclude val tableName: String? = null,
     val createdAt: String = ""
 )
 
@@ -170,15 +167,16 @@ data class TableOrder(
     val totalAmount: Double = 0.0,
     val queueNumber: Int = 0,
     val orderCode: String? = null,
-    val orderType: String? = "dine_in", // "dine_in" | "no_table" | "online" | "takeaway"
+    val orderType: String? = "dine_in", // "dine_in" | "online" | "takeaway"
     val paxCount: Int? = null,
     val isCallByName: Boolean? = false,
-    val paymentMethod: String? = "cash", // "cash" | "transfer" | "qris"
+    val paymentMethod: String? = "cash", // "cash" | "transfer" | "qris" | "edc"
     val paymentProofUrl: String? = null,
     val customerPhone: String? = null,
     val cancelReason: String? = null,
     val status: String = "pending", // "pending" | "preparing" | "completed" | "cancelled"
     val paymentStatus: String = "unpaid",
+    val completedAt: String? = null,
     val createdAt: String = ""
 )
 

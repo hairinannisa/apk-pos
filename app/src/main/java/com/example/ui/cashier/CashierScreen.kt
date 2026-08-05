@@ -57,9 +57,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.model.TableOrder
 import com.example.data.model.User
 import com.example.ui.components.formatRupiah
+import com.example.ui.kitchen.AddItemsDialog
+import com.example.ui.kitchen.CancelOrderDialog
+import com.example.ui.kitchen.KitchenOrderCardClean
+import com.example.ui.kitchen.KitchenViewModel
 import com.example.ui.pos.ProofUploadState
 import com.example.ui.theme.GreenAccent
 import com.example.ui.theme.GreenAccentDark
@@ -71,8 +78,8 @@ import com.example.ui.theme.MinimalTextSecondary
 
 /**
  * Layar "Bayar Meja" — daftar tagihan yang sedang berjalan di antrian dapur
- * (belum dibayar) dan yang sudah selesai dibayar, sama seperti CashierTab di
- * website. Kasir bisa langsung melihat status dapur tiap tagihan (masih
+ * (belum dibayar), yang sudah selesai dibayar, dan antrean dapur, sama seperti
+ * di website. Kasir bisa langsung melihat status dapur tiap tagihan (masih
  * dimasak / sudah selesai) sebelum memproses pembayaran.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,18 +87,28 @@ import com.example.ui.theme.MinimalTextSecondary
 fun CashierScreen(
     user: User,
     cashierViewModel: CashierViewModel,
+    kitchenViewModel: KitchenViewModel = viewModel(),
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     cashierViewModel.setUser(user)
+    kitchenViewModel.setUser(user)
 
     val bills by cashierViewModel.bills.collectAsState()
     val paidOrders by cashierViewModel.paidOrders.collectAsState()
     val isLoading by cashierViewModel.isLoading.collectAsState()
     val paymentState by cashierViewModel.paymentState.collectAsState()
 
+    val kitchenOrders by kitchenViewModel.orders.collectAsState()
+    val kitchenProducts by kitchenViewModel.products.collectAsState()
+    val kitchenCategories by kitchenViewModel.categories.collectAsState()
+    val isKitchenLoading by kitchenViewModel.isLoading.collectAsState()
+    val actionError by kitchenViewModel.actionError.collectAsState()
+
     var activeTab by remember { mutableStateOf("unpaid") }
     var selectedBill by remember { mutableStateOf<TableBill?>(null) }
+    var cancelDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
+    var addItemDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
 
     LaunchedEffect(paymentState) {
         if (paymentState is PaymentState.Success) {
@@ -138,70 +155,140 @@ fun CashierScreen(
                     isSelected = activeTab == "paid",
                     onClick = { activeTab = "paid" }
                 )
+                CashierTabChip(
+                    label = "Antrean Dapur (${kitchenOrders.size})",
+                    isSelected = activeTab == "kitchen",
+                    onClick = { activeTab = "kitchen" }
+                )
             }
 
-            if (activeTab == "unpaid") {
-                if (isLoading && bills.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = GreenPrimary)
-                    }
-                } else if (bills.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Default.Receipt, contentDescription = null, tint = MinimalBorder, modifier = Modifier.size(64.dp))
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Belum ada tagihan berjalan", color = MinimalTextPrimary, fontWeight = FontWeight.Bold)
-                            Text("Pesanan meja/bungkus yang dikirim ke dapur akan muncul di sini.", color = MinimalTextSecondary, fontSize = 12.sp)
+            when (activeTab) {
+                "unpaid" -> {
+                    if (isLoading && bills.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = GreenPrimary)
                         }
-                    }
-                } else {
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(bills, key = { it.billKey }) { bill ->
-                            BillCard(bill = bill, onClick = { selectedBill = bill })
+                    } else if (bills.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Receipt, contentDescription = null, tint = MinimalBorder, modifier = Modifier.size(64.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Belum ada tagihan berjalan", color = MinimalTextPrimary, fontWeight = FontWeight.Bold)
+                                Text("Pesanan meja/bungkus yang dikirim ke dapur akan muncul di sini.", color = MinimalTextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(bills, key = { it.billKey }) { bill ->
+                                BillCard(bill = bill, onClick = { selectedBill = bill })
+                            }
                         }
                     }
                 }
-            } else {
-                if (paidOrders.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Belum ada riwayat pembayaran.", color = MinimalTextSecondary, fontSize = 13.sp)
-                    }
-                } else {
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(paidOrders, key = { it.id }) { order ->
-                            Card(
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                modifier = Modifier.fillMaxWidth().border(1.dp, MinimalBorder, RoundedCornerShape(14.dp))
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(order.tableName.ifBlank { order.customerName }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(order.totalAmount.formatRupiah(), fontWeight = FontWeight.Bold, color = GreenPrimary, fontSize = 13.sp)
+                "paid" -> {
+                    if (paidOrders.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Belum ada riwayat pembayaran.", color = MinimalTextSecondary, fontSize = 13.sp)
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(paidOrders, key = { it.id }) { order ->
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    modifier = Modifier.fillMaxWidth().border(1.dp, MinimalBorder, RoundedCornerShape(14.dp))
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(order.tableName.ifBlank { order.customerName }, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                            Text(order.totalAmount.formatRupiah(), fontWeight = FontWeight.Bold, color = GreenPrimary, fontSize = 13.sp)
+                                        }
+                                        Text(
+                                            "Dibayar via ${order.paymentMethod?.uppercase() ?: "CASH"}",
+                                            fontSize = 11.sp,
+                                            color = MinimalTextSecondary
+                                        )
                                     }
-                                    Text(
-                                        "Dibayar via ${order.paymentMethod?.uppercase() ?: "CASH"}",
-                                        fontSize = 11.sp,
-                                        color = MinimalTextSecondary
-                                    )
                                 }
+                            }
+                        }
+                    }
+                }
+                "kitchen" -> {
+                    if (isKitchenLoading && kitchenOrders.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = GreenPrimary)
+                        }
+                    } else if (kitchenOrders.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Restaurant, contentDescription = null, tint = MinimalBorder, modifier = Modifier.size(64.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Belum ada antrian dapur", color = MinimalTextPrimary, fontWeight = FontWeight.Bold)
+                                Text("Pesanan yang dikirim ke dapur akan muncul di sini secara real-time.", color = MinimalTextSecondary, fontSize = 12.sp)
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(kitchenOrders, key = { it.id }) { tableOrder ->
+                                KitchenOrderCardClean(
+                                    order = tableOrder,
+                                    onToggleItem = { itemIndex ->
+                                        kitchenViewModel.toggleItemStatus(tableOrder, itemIndex)
+                                    },
+                                    onCancelOrder = { cancelDialogOrder = tableOrder },
+                                    onAddItems = { addItemDialogOrder = tableOrder }
+                                )
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    cancelDialogOrder?.let { order ->
+        CancelOrderDialog(
+            order = order,
+            onConfirm = { reason ->
+                kitchenViewModel.cancelOrder(order, reason)
+                cancelDialogOrder = null
+            },
+            onDismiss = { cancelDialogOrder = null }
+        )
+    }
+
+    addItemDialogOrder?.let { order ->
+        AddItemsDialog(
+            order = order,
+            products = kitchenProducts,
+            categories = kitchenCategories,
+            errorMessage = actionError,
+            onClearError = { kitchenViewModel.clearActionError() },
+            onConfirm = { newItems ->
+                kitchenViewModel.addItemsToOrder(order, newItems)
+                addItemDialogOrder = null
+            },
+            onDismiss = {
+                kitchenViewModel.clearActionError()
+                addItemDialogOrder = null
+            }
+        )
     }
 
     selectedBill?.let { bill ->
