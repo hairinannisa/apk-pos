@@ -2,6 +2,9 @@ package com.example.ui.pos
 
 import android.content.res.Configuration
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,16 +30,36 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.ui.components.PrinterSettingsDialog
+import com.example.util.printer.ThermalPrinterManager
+import com.example.util.printer.toReceiptData
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -52,6 +75,8 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBasket
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -153,6 +178,7 @@ fun PosScreen(
     var showHistoryDialog by remember { mutableStateOf(false) }
     var showCashierQueue by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
+    var showPrinterSettings by remember { mutableStateOf(false) }
 
     // Layar "Bayar Meja" (daftar tagihan belum/sudah dibayar dari antrian
     // dapur) ditampilkan sebagai pengganti layar Kasir biasa, bukan dialog
@@ -203,6 +229,13 @@ fun PosScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showPrinterSettings = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = "Pengaturan Printer Thermal",
+                            tint = MinimalTextSecondary
+                        )
+                    }
                     IconButton(onClick = { showCashierQueue = true }) {
                         Icon(
                             imageVector = Icons.Default.Receipt,
@@ -528,6 +561,7 @@ fun PosScreen(
         val proofUploadState by posViewModel.proofUploadState.collectAsState()
         CheckoutDialogClean(
             totalAmount = totalAmount,
+            itemCount = cartItems.sumOf { it.qty },
             checkoutState = checkoutState,
             isFnbBusiness = business?.transactionMode?.lowercase() == "fnb",
             tables = tables,
@@ -1239,8 +1273,57 @@ fun CartItemRowClean(
 }
 
 @Composable
+fun DashedDivider(
+    color: Color = Color(0xFFCBD5E1),
+    thickness: Dp = 1.dp,
+    dashWidth: Dp = 4.dp,
+    gapWidth: Dp = 4.dp,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.fillMaxWidth().height(thickness)) {
+        val pathEffect = PathEffect.dashPathEffect(
+            floatArrayOf(dashWidth.toPx(), gapWidth.toPx()), 0f
+        )
+        drawLine(
+            color = color,
+            start = Offset(0f, 0f),
+            end = Offset(size.width, 0f),
+            strokeWidth = thickness.toPx(),
+            pathEffect = pathEffect
+        )
+    }
+}
+
+val SerratedReceiptShape = GenericShape { size, _ ->
+    val teeth = 26
+    val toothWidth = size.width / teeth
+    val toothHeight = 8f
+
+    moveTo(0f, toothHeight)
+    for (i in 0 until teeth) {
+        val x1 = i * toothWidth + toothWidth / 2f
+        val x2 = (i + 1) * toothWidth
+        lineTo(x1, 0f)
+        lineTo(x2, toothHeight)
+    }
+
+    lineTo(size.width, size.height - toothHeight)
+
+    for (i in teeth downTo 1) {
+        val x1 = (i - 0.5f) * toothWidth
+        val x2 = (i - 1) * toothWidth
+        lineTo(x1, size.height)
+        lineTo(x2, size.height - toothHeight)
+    }
+
+    lineTo(0f, toothHeight)
+    close()
+}
+
+@Composable
 fun CheckoutDialogClean(
     totalAmount: Double,
+    itemCount: Int = 1,
     checkoutState: CheckoutState,
     isFnbBusiness: Boolean,
     tables: List<com.example.data.model.DiningTable>,
@@ -1259,9 +1342,6 @@ fun CheckoutDialogClean(
     var selectedMethod by remember { mutableStateOf("cash") }
     var cashInput by remember { mutableStateOf("") }
 
-    // Kategori pemesanan, sama seperti "Simpan Ke Antrian Dapur" di website:
-    // "table" (meja), "no_table" (tanpa meja/panggil nama), "takeaway" (bungkus).
-    // Hanya relevan & ditampilkan utk bisnis F&B.
     var orderCategory by remember { mutableStateOf("table") }
     var selectedTable by remember { mutableStateOf<com.example.data.model.DiningTable?>(null) }
     var customerName by remember { mutableStateOf("Pelanggan POS") }
@@ -1281,330 +1361,71 @@ fun CheckoutDialogClean(
     val isProofStepValid = !needsProof || proofUrl != null
     val isCashValid = selectedMethod != "cash" || cashReceived >= totalAmount
 
-    Dialog(onDismissRequest = onDismiss) {
+    val configuration = LocalConfiguration.current
+    val isWideScreen = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp > 600
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(if (isWideScreen) 0.88f else 0.95f)
                 .fillMaxHeight(0.92f)
-                .border(1.dp, MinimalBorder, RoundedCornerShape(24.dp))
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(24.dp))
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Column(
+            if (isWideScreen) {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(24.dp)
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    Text(
-                        text = "Pembayaran Kasir",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MinimalTextPrimary
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Column(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        CheckoutLeftContent(
+                            selectedMethod = selectedMethod,
+                            onSelectMethod = { selectedMethod = it; if (it == "cash") onClearProofImage() },
+                            cashInput = cashInput,
+                            onCashInputChange = { cashInput = it },
+                            totalAmount = totalAmount,
+                            isFnbBusiness = isFnbBusiness,
+                            orderCategory = orderCategory,
+                            onCategoryChange = { orderCategory = it },
+                            tables = tables,
+                            selectedTable = selectedTable,
+                            onSelectTable = { selectedTable = it },
+                            customerName = customerName,
+                            onCustomerNameChange = { customerName = it },
+                            proofUploadState = proofUploadState,
+                            onPickProofImage = { imagePickerLauncher.launch("image/*") },
+                            onClearProofImage = onClearProofImage
+                        )
+                    }
 
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFFF0F4E9))
-                            .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Total Tagihan", fontSize = 12.sp, color = MinimalTextSecondary)
-                            Text(
-                                totalAmount.formatRupiah(),
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = GreenPrimary
-                            )
-                        }
-                    }
+                            .fillMaxHeight()
+                            .width(1.dp)
+                            .background(Color(0xFFE2E8F0))
+                    )
 
-                    // --- Kategori Pemesanan: Meja / Tanpa Meja / Bungkus ---
-                    // Hanya ditampilkan utk bisnis F&B, sama seperti
-                    // SaveToKitchenModal di website (transactionMode === 'fnb').
-                    if (isFnbBusiness) {
-                        Spacer(modifier = Modifier.height(18.dp))
-                        Text("Jenis Pesanan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf(
-                                "table" to "Meja",
-                                "no_table" to "Tanpa Meja",
-                                "takeaway" to "Bungkus"
-                            ).forEach { (key, label) ->
-                                val isSelected = orderCategory == key
-                                Card(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            orderCategory = key
-                                            if (key != "table") selectedTable = null
-                                        },
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
-                                    )
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 10.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) Color.White else MinimalTextSecondary,
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        if (orderCategory == "table") {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            if (tables.isEmpty()) {
-                                Text(
-                                    "Belum ada data meja untuk cabang ini. Tambahkan meja lewat website terlebih dahulu.",
-                                    fontSize = 11.sp,
-                                    color = Color(0xFFDC2626)
-                                )
-                            } else {
-                                Text("Pilih Meja", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MinimalTextSecondary)
-                                Spacer(modifier = Modifier.height(6.dp))
-                                // Tinggi tetap (bukan Unspecified) — LazyVerticalGrid butuh
-                                // batas tinggi pasti karena sudah berada di dalam Column yang
-                                // scrollable; kalau tak dibatasi, akan crash "infinite height".
-                                // Meja yang jumlahnya sedikit tetap bisa discroll, tidak masalah.
-                                Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
-                                    LazyVerticalGrid(
-                                        columns = GridCells.Fixed(3),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        items(tables) { table ->
-                                            val isSelected = selectedTable?.id == table.id
-                                            val isOccupied = table.status == "occupied"
-                                            Card(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable { selectedTable = table },
-                                                shape = RoundedCornerShape(10.dp),
-                                                colors = CardDefaults.cardColors(
-                                                    containerColor = when {
-                                                        isSelected -> GreenPrimary
-                                                        isOccupied -> Color(0xFFFFE4E4)
-                                                        else -> Color(0xFFF1F5F9)
-                                                    }
-                                                )
-                                            ) {
-                                                Column(
-                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally
-                                                ) {
-                                                    Text(
-                                                        table.name,
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isSelected) Color.White else MinimalTextPrimary,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Text(
-                                                        if (isOccupied) "Terisi" else "Kosong",
-                                                        fontSize = 9.sp,
-                                                        color = if (isSelected) Color.White.copy(alpha = 0.85f) else MinimalTextSecondary
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            OutlinedTextField(
-                                value = customerName,
-                                onValueChange = { customerName = it },
-                                label = { Text(if (orderCategory == "takeaway") "Nama Pemesan (Bungkus)" else "Nama Dipanggil") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = GreenPrimary,
-                                    unfocusedBorderColor = MinimalBorder
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Text("Metode Pembayaran", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("cash" to "Tunai", "qris" to "QRIS", "transfer" to "Transfer").forEach { (key, label) ->
-                            val isSelected = selectedMethod == key
-                            Card(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        selectedMethod = key
-                                        if (key == "cash") onClearProofImage()
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
-                                )
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 12.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = label,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else MinimalTextSecondary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (selectedMethod == "cash") {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        OutlinedTextField(
-                            value = cashInput,
-                            onValueChange = { cashInput = it },
-                            label = { Text("Uang Diterima (Rp)") },
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = GreenPrimary,
-                                unfocusedBorderColor = MinimalBorder
-                            )
-                        )
-
-                        if (cashReceived > 0) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text("Kembalian:", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                Text(
-                                    if (change >= 0) change.formatRupiah() else "Kurang ${(-change).formatRupiah()}",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (change >= 0) GreenPrimary else Color(0xFFDC2626)
-                                )
-                            }
-                        }
-                    } else {
-                        // --- Upload Bukti Pembayaran (Transfer / QRIS) ---
-                        // Sebelumnya tidak ada sama sekali di APK, padahal
-                        // wajib di website (PaymentProofCapture).
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Bukti Pembayaran (${selectedMethod.uppercase()})",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MinimalTextSecondary
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        when (proofUploadState) {
-                            is ProofUploadState.Success -> {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(Color(0xFFEFFBEE))
-                                        .border(1.dp, Color(0xFFBBE8B4), RoundedCornerShape(14.dp))
-                                        .padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    coil.compose.AsyncImage(
-                                        model = proofUploadState.url,
-                                        contentDescription = "Bukti pembayaran",
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(RoundedCornerShape(10.dp)),
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("Bukti tersimpan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E8E3E))
-                                        Text("Akan diarsipkan bersama transaksi ini.", fontSize = 10.sp, color = MinimalTextSecondary)
-                                    }
-                                    IconButton(onClick = { onClearProofImage() }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Hapus & unggah ulang", tint = MinimalTextSecondary)
-                                    }
-                                }
-                            }
-                            is ProofUploadState.Uploading -> {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    CircularProgressIndicator(color = GreenPrimary, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Mengunggah bukti...", fontSize = 12.sp, color = MinimalTextSecondary)
-                                }
-                            }
-                            else -> {
-                                OutlinedButton(
-                                    onClick = { imagePickerLauncher.launch("image/*") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(70.dp),
-                                    shape = RoundedCornerShape(14.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, tint = GreenPrimary)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Unggah Foto Bukti Bayar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GreenPrimary)
-                                }
-                                if (proofUploadState is ProofUploadState.Error) {
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(proofUploadState.message, fontSize = 11.sp, color = Color(0xFFDC2626))
-                                }
-                            }
-                        }
-                    }
-
-                    if (checkoutState is CheckoutState.Error) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(checkoutState.message, fontSize = 12.sp, color = Color(0xFFDC2626), fontWeight = FontWeight.Medium)
-                    }
-                }
-
-                // Tombol proses tetap terlihat di bawah (di luar area scroll)
-                Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                    Button(
-                        onClick = {
+                    CheckoutRightPanel(
+                        itemCount = itemCount,
+                        totalAmount = totalAmount,
+                        selectedMethod = selectedMethod,
+                        cashReceived = cashReceived,
+                        change = change,
+                        checkoutState = checkoutState,
+                        isValid = checkoutState !is CheckoutState.Processing && isCashValid && isTableStepValid && isProofStepValid,
+                        onDismiss = onDismiss,
+                        onConfirm = {
                             val resolvedOrderType = if (isFnbBusiness) {
                                 when (orderCategory) {
                                     "table" -> "dine_in"
@@ -1620,24 +1441,508 @@ fun CheckoutDialogClean(
                                 proofUrl
                             )
                         },
-                        enabled = checkoutState !is CheckoutState.Processing &&
-                            isCashValid && isTableStepValid && isProofStepValid,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp)
+                ) {
+                    CheckoutLeftContent(
+                        selectedMethod = selectedMethod,
+                        onSelectMethod = { selectedMethod = it; if (it == "cash") onClearProofImage() },
+                        cashInput = cashInput,
+                        onCashInputChange = { cashInput = it },
+                        totalAmount = totalAmount,
+                        isFnbBusiness = isFnbBusiness,
+                        orderCategory = orderCategory,
+                        onCategoryChange = { orderCategory = it },
+                        tables = tables,
+                        selectedTable = selectedTable,
+                        onSelectTable = { selectedTable = it },
+                        customerName = customerName,
+                        onCustomerNameChange = { customerName = it },
+                        proofUploadState = proofUploadState,
+                        onPickProofImage = { imagePickerLauncher.launch("image/*") },
+                        onClearProofImage = onClearProofImage
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    DashedDivider()
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    CheckoutRightPanel(
+                        itemCount = itemCount,
+                        totalAmount = totalAmount,
+                        selectedMethod = selectedMethod,
+                        cashReceived = cashReceived,
+                        change = change,
+                        checkoutState = checkoutState,
+                        isValid = checkoutState !is CheckoutState.Processing && isCashValid && isTableStepValid && isProofStepValid,
+                        onDismiss = onDismiss,
+                        onConfirm = {
+                            val resolvedOrderType = if (isFnbBusiness) {
+                                when (orderCategory) {
+                                    "table" -> "dine_in"
+                                    "takeaway" -> "takeaway"
+                                    else -> "no_table"
+                                }
+                            } else null
+                            onConfirmCheckout(
+                                selectedMethod,
+                                resolvedOrderType,
+                                if (isFnbBusiness && orderCategory == "table") selectedTable else null,
+                                customerName.ifBlank { "Pelanggan POS" },
+                                proofUrl
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckoutLeftContent(
+    selectedMethod: String,
+    onSelectMethod: (String) -> Unit,
+    cashInput: String,
+    onCashInputChange: (String) -> Unit,
+    totalAmount: Double,
+    isFnbBusiness: Boolean,
+    orderCategory: String,
+    onCategoryChange: (String) -> Unit,
+    tables: List<com.example.data.model.DiningTable>,
+    selectedTable: com.example.data.model.DiningTable?,
+    onSelectTable: (com.example.data.model.DiningTable?) -> Unit,
+    customerName: String,
+    onCustomerNameChange: (String) -> Unit,
+    proofUploadState: ProofUploadState,
+    onPickProofImage: () -> Unit,
+    onClearProofImage: () -> Unit
+) {
+    Text(
+        text = "Pilih Metode Pembayaran",
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF1E293B)
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        val methods = listOf(
+            Triple("cash", "TUNAI (CASH)", Icons.Default.AttachMoney),
+            Triple("qris", "QRIS DIGITAL", Icons.Default.QrCodeScanner),
+            Triple("transfer", "BANK TRANSFER", Icons.Default.AccountBalance)
+        )
+
+        methods.forEach { (key, label, icon) ->
+            val isSelected = selectedMethod == key
+            Card(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onSelectMethod(key) },
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.5.dp,
+                    if (isSelected) Color(0xFFC8A76B) else Color(0xFFE2E8F0)
+                ),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isSelected) Color(0xFFFAF2E6) else Color.White
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp, horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = if (isSelected) Color(0xFF8C6218) else Color(0xFF64748B),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = label,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color(0xFF8C6218) else Color(0xFF475569),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+
+    if (selectedMethod == "cash") {
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+            text = "JUMLAH UANG DITERIMA",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF64748B)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = cashInput,
+            onValueChange = onCashInputChange,
+            leadingIcon = {
+                Text(
+                    text = "Rp",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color(0xFF334155),
+                    modifier = Modifier.padding(start = 12.dp)
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFFF8FAFC),
+                unfocusedContainerColor = Color(0xFFF8FAFC),
+                focusedBorderColor = Color(0xFFC8A76B),
+                unfocusedBorderColor = Color(0xFFE2E8F0)
+            ),
+            textStyle = androidx.compose.ui.text.TextStyle(
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B)
+            )
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "UANG PAS / REKOMENDASI CEPAT:",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF64748B)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AssistChip(
+                onClick = { onCashInputChange(totalAmount.toInt().toString()) },
+                label = { Text("Uang Pas", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                shape = RoundedCornerShape(10.dp),
+                colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFFF1F5F9))
+            )
+
+            val quickOptions = listOf(50000.0, 100000.0, 200000.0, 500000.0)
+            val filtered = quickOptions.filter { it >= totalAmount }.take(3)
+            val optionsToShow = if (filtered.isEmpty()) listOf(totalAmount) else filtered
+
+            optionsToShow.forEach { amt ->
+                AssistChip(
+                    onClick = { onCashInputChange(amt.toInt().toString()) },
+                    label = { Text(amt.formatRupiah(), fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = AssistChipDefaults.assistChipColors(containerColor = Color(0xFFF1F5F9))
+                )
+            }
+        }
+    } else {
+        Spacer(modifier = Modifier.height(20.dp))
+        Text(
+            text = "BUKTI PEMBAYARAN (${selectedMethod.uppercase()})",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF64748B)
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        when (proofUploadState) {
+            is ProofUploadState.Success -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFEFFBEE))
+                        .border(1.dp, Color(0xFFBBE8B4), RoundedCornerShape(14.dp))
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    coil.compose.AsyncImage(
+                        model = proofUploadState.url,
+                        contentDescription = "Bukti pembayaran",
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Bukti tersimpan", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E8E3E))
+                        Text("Akan diarsipkan bersama transaksi ini.", fontSize = 10.sp, color = MinimalTextSecondary)
+                    }
+                    IconButton(onClick = onClearProofImage) {
+                        Icon(Icons.Default.Close, contentDescription = "Hapus & unggah ulang", tint = MinimalTextSecondary)
+                    }
+                }
+            }
+            is ProofUploadState.Uploading -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(color = GreenPrimary, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Mengunggah bukti...", fontSize = 12.sp, color = MinimalTextSecondary)
+                }
+            }
+            else -> {
+                OutlinedButton(
+                    onClick = onPickProofImage,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = GreenPrimary)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Unggah Foto Bukti Bayar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GreenPrimary)
+                }
+                if (proofUploadState is ProofUploadState.Error) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(proofUploadState.message, fontSize = 11.sp, color = Color(0xFFDC2626))
+                }
+            }
+        }
+    }
+
+    if (isFnbBusiness) {
+        Spacer(modifier = Modifier.height(20.dp))
+        Text("JENIS PESANAN", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF64748B))
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("table" to "Meja", "no_table" to "Tanpa Meja", "takeaway" to "Bungkus").forEach { (key, label) ->
+                val isSelected = orderCategory == key
+                Card(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            onCategoryChange(key)
+                            if (key != "table") onSelectTable(null)
+                        },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9)
+                    )
+                ) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = GreenAccent,
-                            contentColor = GreenAccentDark
-                        )
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (checkoutState is CheckoutState.Processing) {
-                            CircularProgressIndicator(color = GreenAccentDark, modifier = Modifier.size(20.dp))
-                        } else {
-                            Text("PROSES TRANSAKSI", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSelected) Color.White else MinimalTextSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        if (orderCategory == "table") {
+            Spacer(modifier = Modifier.height(10.dp))
+            if (tables.isEmpty()) {
+                Text(
+                    "Belum ada data meja. Tambahkan meja lewat admin terlebih dahulu.",
+                    fontSize = 11.sp,
+                    color = Color(0xFFDC2626)
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxWidth().height(120.dp)) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(tables) { table ->
+                            val isSelected = selectedTable?.id == table.id
+                            val isOccupied = table.status == "occupied"
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onSelectTable(table) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = when {
+                                        isSelected -> GreenPrimary
+                                        isOccupied -> Color(0xFFFFE4E4)
+                                        else -> Color(0xFFF1F5F9)
+                                    }
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        table.name,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.White else MinimalTextPrimary
+                                    )
+                                }
+                            }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CheckoutRightPanel(
+    itemCount: Int,
+    totalAmount: Double,
+    selectedMethod: String,
+    cashReceived: Double,
+    change: Double,
+    checkoutState: CheckoutState,
+    isValid: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "CHECKOUT POS",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF64748B)
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Color(0xFF64748B))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            DashedDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Jumlah Barang:", fontSize = 14.sp, color = Color(0xFF475569))
+                Text("$itemCount Pcs", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            DashedDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Tagihan:", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                Text(
+                    totalAmount.formatRupiah(),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFFB45309)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("KEMBALIAN:", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
+                Text(
+                    text = if (selectedMethod == "cash") {
+                        if (change >= 0) change.formatRupiah() else "Kurang ${(totalAmount - cashReceived).formatRupiah()}"
+                    } else "Rp 0",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF15803D)
+                )
+            }
+
+            if (checkoutState is CheckoutState.Error) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(checkoutState.message, fontSize = 12.sp, color = Color(0xFFDC2626))
+            }
+        }
+
+        Column(modifier = Modifier.padding(top = 24.dp)) {
+            Button(
+                onClick = onConfirm,
+                enabled = isValid,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF0F5128),
+                    contentColor = Color.White
+                )
+            ) {
+                if (checkoutState is CheckoutState.Processing) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Memproses...", fontWeight = FontWeight.Bold)
+                } else {
+                    Text("Selesai & Cetak Struk", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF475569))
+            ) {
+                Text("Batal", fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1649,145 +1954,327 @@ fun ReceiptDialogClean(
     userName: String,
     onDismiss: () -> Unit
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val printerManager = remember { ThermalPrinterManager(context) }
+    val clipboardManager = LocalClipboardManager.current
+
+    var isPrinting by remember { mutableStateOf(false) }
+    var showPrinterSettings by remember { mutableStateOf(false) }
+
+    if (showPrinterSettings) {
+        PrinterSettingsDialog(onDismiss = { showPrinterSettings = false })
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .border(1.dp, MinimalBorder, RoundedCornerShape(20.dp))
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .padding(vertical = 16.dp, horizontal = 12.dp),
+            contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(),
+                    .widthIn(max = 480.dp)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFD7E8CD)),
-                    contentAlignment = Alignment.Center
+                Surface(
+                    shape = SerratedReceiptShape,
+                    color = Color.White,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = GreenPrimary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Pembayaran Selesai!",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MinimalTextPrimary
-                )
-
-                Text(
-                    text = "ID: ${order.id}",
-                    fontSize = 11.sp,
-                    color = MinimalTextSecondary
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MinimalBackground),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, MinimalBorder, RoundedCornerShape(12.dp))
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .padding(top = 28.dp, bottom = 28.dp, start = 24.dp, end = 24.dp)
+                            .fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         Text(
-                            text = "STRUK TRANSAKSI",
+                            text = "KOPI PAGI",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF1E293B),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "SaaS POS Multi-tenant",
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MinimalTextSecondary,
-                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF64748B),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Makassar, Indonesia",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B),
                             textAlign = TextAlign.Center
                         )
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        DashedDivider(color = Color(0xFFCBD5E1))
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                        order.items.forEach { item ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            ReceiptMetaRow("No. Order:", order.id.ifBlank { "UBHDOMB3JU..." }.take(16))
+                            ReceiptMetaRow(
+                                "Tanggal:",
+                                if (order.createdAt.isNotBlank()) order.createdAt
+                                else SimpleDateFormat("d/M/yyyy, HH.mm.ss", Locale("id", "ID")).format(Date())
+                            )
+                            ReceiptMetaRow("Kasir:", userName.ifBlank { "dark anime" })
+                            ReceiptMetaRow("Sumber:", "POS")
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        DashedDivider(color = Color(0xFFCBD5E1))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            order.items.forEach { item ->
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = item.name + if (!item.variant.isNullOrBlank()) " (${item.variant})" else "",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF1E293B),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = (item.price * item.qty).formatRupiah(),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF1E293B)
+                                        )
+                                    }
+                                    Text(
+                                        text = "${item.qty} x ${item.price.formatRupiah()}",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        DashedDivider(color = Color(0xFFCBD5E1))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ReceiptSummaryRow("Subtotal:", order.totalAmount.formatRupiah())
+                            ReceiptSummaryRow("Pajak (0%):", "Rp 0")
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "TOTAL :",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B)
+                                )
+                                Text(
+                                    text = order.totalAmount.formatRupiah(),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF1E293B)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(2.dp))
+                            ReceiptSummaryRow("Metode:", order.paymentMethod.uppercase())
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                Text("Status:", fontSize = 12.sp, color = Color(0xFF64748B))
                                 Text(
-                                    text = "${item.qty}x ${item.name} ${if (item.variant != null) "(${item.variant})" else ""}",
+                                    "LUNAS",
                                     fontSize = 12.sp,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = (item.price * item.qty).formatRupiah(),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF16A34A)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(MinimalBorder)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        DashedDivider(color = Color(0xFFCBD5E1))
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "*** TERIMA KASIH ***",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155),
+                            textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Sudah berbelanja di outlet kami",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B),
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Sistem kasir digital terintegrasi cloud",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Total", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(
-                                order.totalAmount.formatRupiah(),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = GreenPrimary
-                            )
-                        }
+                Spacer(modifier = Modifier.height(16.dp))
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Metode", fontSize = 12.sp, color = MinimalTextSecondary)
-                            Text(
-                                order.paymentMethod.uppercase(),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color(0xFF334155)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Kembali", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Kasir", fontSize = 12.sp, color = MinimalTextSecondary)
-                            Text(userName, fontSize = 12.sp)
+                    Button(
+                        onClick = {
+                            val textToCopy = generateReceiptText(order, userName)
+                            clipboardManager.setText(AnnotatedString(textToCopy))
+                            Toast.makeText(context, "Teks struk berhasil disalin!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF5EADA),
+                            contentColor = Color(0xFF8C6218)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Salin Teks", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            val saved = printerManager.getSavedPrinter()
+                            if (saved == null) {
+                                Toast.makeText(context, "Silakan atur printer Bluetooth terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                                showPrinterSettings = true
+                            } else {
+                                isPrinting = true
+                                scope.launch {
+                                    val receiptData = order.toReceiptData(businessName = "KOPI PAGI", cashierName = userName)
+                                    val result = printerManager.printReceipt(saved, receiptData)
+                                    isPrinting = false
+                                    result.fold(
+                                        onSuccess = { Toast.makeText(context, "Struk berhasil dicetak!", Toast.LENGTH_SHORT).show() },
+                                        onFailure = { err -> Toast.makeText(context, err.message ?: "Gagal cetak", Toast.LENGTH_LONG).show() }
+                                    )
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFB45309),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                    ) {
+                        if (isPrinting) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Cetak", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val saved = printerManager.getSavedPrinter()
+                        if (saved == null) {
+                            Toast.makeText(context, "Silakan atur printer Bluetooth terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                            showPrinterSettings = true
+                        } else {
+                            isPrinting = true
+                            scope.launch {
+                                val receiptData = order.toReceiptData(businessName = "KOPI PAGI", cashierName = userName)
+                                val result = printerManager.printReceipt(saved, receiptData)
+                                isPrinting = false
+                                result.fold(
+                                    onSuccess = { Toast.makeText(context, "Struk berhasil dicetak!", Toast.LENGTH_SHORT).show() },
+                                    onFailure = { err -> Toast.makeText(context, err.message ?: "Gagal cetak", Toast.LENGTH_LONG).show() }
+                                )
+                            }
+                        }
+                    },
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GreenPrimary,
-                        contentColor = Color.White
-                    )
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF1E293B)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
                 ) {
-                    Text("SELESAI", fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF334155))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Cetak ke Thermal Printer (Bluetooth/USB)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = { showPrinterSettings = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                ) {
+                    Icon(Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Atur Printer Thermal", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
@@ -1795,17 +2282,78 @@ fun ReceiptDialogClean(
 }
 
 @Composable
+private fun ReceiptMetaRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF64748B))
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF1E293B))
+    }
+}
+
+@Composable
+private fun ReceiptSummaryRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF64748B))
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFF1E293B))
+    }
+}
+
+private fun generateReceiptText(order: Order, userName: String): String {
+    return buildString {
+        appendLine("============== KOPI PAGI ==============")
+        appendLine("SaaS POS Multi-tenant")
+        appendLine("Makassar, Indonesia")
+        appendLine("------------------------------------------")
+        appendLine("No. Order : ${order.id.take(16)}")
+        appendLine("Tanggal   : ${if (order.createdAt.isNotBlank()) order.createdAt else SimpleDateFormat("d/M/yyyy, HH.mm.ss", Locale("id", "ID")).format(Date())}")
+        appendLine("Kasir     : $userName")
+        appendLine("Sumber    : POS")
+        appendLine("------------------------------------------")
+        order.items.forEach { item ->
+            appendLine("${item.name} ${item.variant?.let { "($it)" } ?: ""}")
+            appendLine("  ${item.qty} x ${item.price.formatRupiah()} = ${(item.qty * item.price).formatRupiah()}")
+        }
+        appendLine("------------------------------------------")
+        appendLine("Subtotal  : ${order.totalAmount.formatRupiah()}")
+        appendLine("Pajak (0%): Rp 0")
+        appendLine("TOTAL     : ${order.totalAmount.formatRupiah()}")
+        appendLine("Metode    : ${order.paymentMethod.uppercase()}")
+        appendLine("Status    : LUNAS")
+        appendLine("------------------------------------------")
+        appendLine("*** TERIMA KASIH ***")
+        appendLine("Sudah berbelanja di outlet kami")
+    }
+}
+
+@Composable
 fun PastOrdersDialogClean(
     orders: List<Order>,
+    userName: String = "Kasir",
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val printerManager = remember { ThermalPrinterManager(context) }
+
+    var showPrinterSettings by remember { mutableStateOf(false) }
+    var printingOrderId by remember { mutableStateOf<String?>(null) }
+
+    if (showPrinterSettings) {
+        PrinterSettingsDialog(onDismiss = { showPrinterSettings = false })
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.8f)
+                .fillMaxHeight(0.85f)
                 .border(1.dp, MinimalBorder, RoundedCornerShape(20.dp))
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
@@ -1820,8 +2368,13 @@ fun PastOrdersDialogClean(
                         fontWeight = FontWeight.Bold,
                         color = MinimalTextPrimary
                     )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Tutup")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { showPrinterSettings = true }) {
+                            Icon(Icons.Default.Print, contentDescription = "Pengaturan Printer", tint = GreenPrimary)
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Tutup")
+                        }
                     }
                 }
 
@@ -1855,7 +2408,7 @@ fun PastOrdersDialogClean(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = "ID: ${order.id.take(10)}...",
+                                            text = "ID: ${order.id.take(12)}...",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp,
                                             color = GreenPrimary
@@ -1875,6 +2428,53 @@ fun PastOrdersDialogClean(
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold
                                     )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val saved = printerManager.getSavedPrinter()
+                                                if (saved == null) {
+                                                    Toast.makeText(context, "Silakan atur printer Bluetooth terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                                                    showPrinterSettings = true
+                                                } else {
+                                                    printingOrderId = order.id
+                                                    scope.launch {
+                                                        val receiptData = order.toReceiptData(
+                                                            businessName = "USAHAKI POS",
+                                                            cashierName = userName
+                                                        )
+                                                        val res = printerManager.printReceipt(saved, receiptData)
+                                                        printingOrderId = null
+                                                        res.fold(
+                                                            onSuccess = {
+                                                                Toast.makeText(context, "Struk berhasil dicetak!", Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            onFailure = { err ->
+                                                                Toast.makeText(context, err.message ?: "Gagal cetak", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            if (printingOrderId == order.id) {
+                                                CircularProgressIndicator(color = GreenPrimary, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Mencetak...", fontSize = 11.sp, color = GreenPrimary)
+                                            } else {
+                                                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(14.dp), tint = GreenPrimary)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Cetak Struk", fontSize = 11.sp, color = GreenPrimary)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

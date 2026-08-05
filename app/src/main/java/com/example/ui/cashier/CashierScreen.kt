@@ -1,5 +1,13 @@
 package com.example.ui.cashier
 
+import android.widget.Toast
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.example.ui.components.PrinterSettingsDialog
+import com.example.util.printer.ThermalPrinterManager
+import com.example.util.printer.toReceiptData
+import kotlinx.coroutines.launch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -105,10 +113,16 @@ fun CashierScreen(
     val isKitchenLoading by kitchenViewModel.isLoading.collectAsState()
     val actionError by kitchenViewModel.actionError.collectAsState()
 
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val printerManager = remember { ThermalPrinterManager(context) }
+
     var activeTab by remember { mutableStateOf("unpaid") }
     var selectedBill by remember { mutableStateOf<TableBill?>(null) }
     var cancelDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
     var addItemDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
+    var showPrinterSettings by remember { mutableStateOf(false) }
+    var printingOrderId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(paymentState) {
         if (paymentState is PaymentState.Success) {
@@ -126,6 +140,11 @@ fun CashierScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showPrinterSettings = true }) {
+                        Icon(Icons.Default.Print, contentDescription = "Pengaturan Printer Thermal", tint = GreenPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MinimalBackground),
@@ -219,6 +238,47 @@ fun CashierScreen(
                                             fontSize = 11.sp,
                                             color = MinimalTextSecondary
                                         )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.End
+                                        ) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val saved = printerManager.getSavedPrinter()
+                                                    if (saved == null) {
+                                                        Toast.makeText(context, "Silakan atur printer Bluetooth terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                                                        showPrinterSettings = true
+                                                    } else {
+                                                        printingOrderId = order.id
+                                                        scope.launch {
+                                                            val receiptData = order.toReceiptData(
+                                                                businessName = "USAHAKI POS",
+                                                                cashierName = user.name
+                                                            )
+                                                            val res = printerManager.printReceipt(saved, receiptData)
+                                                            printingOrderId = null
+                                                            res.fold(
+                                                                onSuccess = { Toast.makeText(context, "Struk berhasil dicetak!", Toast.LENGTH_SHORT).show() },
+                                                                onFailure = { err -> Toast.makeText(context, err.message ?: "Gagal cetak", Toast.LENGTH_LONG).show() }
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            ) {
+                                                if (printingOrderId == order.id) {
+                                                    CircularProgressIndicator(color = GreenPrimary, modifier = Modifier.size(14.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Mencetak...", fontSize = 11.sp, color = GreenPrimary)
+                                                } else {
+                                                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(14.dp), tint = GreenPrimary)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Cetak Struk", fontSize = 11.sp, color = GreenPrimary)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -302,6 +362,10 @@ fun CashierScreen(
                 selectedBill = null
             }
         )
+    }
+
+    if (showPrinterSettings) {
+        PrinterSettingsDialog(onDismiss = { showPrinterSettings = false })
     }
 }
 
