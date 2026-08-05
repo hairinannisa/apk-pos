@@ -97,6 +97,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTopAppBarState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -208,53 +210,71 @@ fun PosScreen(
     }
 
     val cartSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
 
     Scaffold(
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
+                scrollBehavior = scrollBehavior,
                 title = {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "Usahaki.id",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = GreenPrimary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            RoleBadge(role = user.role)
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Usahaki.id",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (isLandscape) 15.sp else 18.sp,
+                            color = GreenPrimary
+                        )
+                        RoleBadge(role = user.role)
                         BranchBadge(assignedBranchId = user.assignedBranchId)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showPrinterSettings = true }) {
+                    IconButton(
+                        onClick = { showPrinterSettings = true },
+                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Print,
                             contentDescription = "Pengaturan Printer Thermal",
-                            tint = MinimalTextSecondary
+                            tint = MinimalTextSecondary,
+                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
                         )
                     }
-                    IconButton(onClick = { showCashierQueue = true }) {
+                    IconButton(
+                        onClick = { showCashierQueue = true },
+                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Receipt,
                             contentDescription = "Bayar Pesanan Meja",
-                            tint = MinimalTextSecondary
+                            tint = MinimalTextSecondary,
+                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
                         )
                     }
-                    IconButton(onClick = { showHistoryDialog = true }) {
+                    IconButton(
+                        onClick = { showHistoryDialog = true },
+                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = "Riwayat Transaksi",
-                            tint = MinimalTextSecondary
+                            tint = MinimalTextSecondary,
+                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
                         )
                     }
-                    IconButton(onClick = onLogout) {
+                    IconButton(
+                        onClick = onLogout,
+                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "Keluar",
-                            tint = MinimalTextSecondary
+                            tint = MinimalTextSecondary,
+                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
                         )
                     }
                 },
@@ -617,28 +637,31 @@ fun ProductBrowseArea(
     onBarcodeScanned: (String) -> Unit = {},
     onAddToCart: (Product) -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     Column(modifier = modifier) {
         // Search Input + Tombol Pindai Barcode
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = if (isLandscape) 4.dp else 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
-                placeholder = { Text("Cari produk...", color = MinimalTextSecondary) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary) },
+                placeholder = { Text("Cari produk...", color = MinimalTextSecondary, fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(18.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchChange("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                        IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
                         }
                     }
                 },
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = GreenPrimary,
@@ -648,12 +671,12 @@ fun ProductBrowseArea(
                 )
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .size(if (isLandscape) 36.dp else 40.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(if (showBarcodeScanner) GreenAccentDark else GreenPrimary)
                     .clickable { onScanClick() },
                 contentAlignment = Alignment.Center
@@ -661,7 +684,8 @@ fun ProductBrowseArea(
                 Icon(
                     imageVector = Icons.Default.QrCodeScanner,
                     contentDescription = "Pindai Barcode",
-                    tint = Color.White
+                    tint = Color.White,
+                    modifier = Modifier.size(if (isLandscape) 18.dp else 20.dp)
                 )
             }
         }
@@ -672,21 +696,21 @@ fun ProductBrowseArea(
                 onDismiss = onDismissScanner,
                 onBarcodeScanned = onBarcodeScanned
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
 
         // Category Chips
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(bottom = 12.dp)
+            contentPadding = PaddingValues(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(bottom = if (isLandscape) 4.dp else 8.dp)
         ) {
             item {
                 FilterChip(
                     selected = selectedCategory == null,
                     onClick = { onSelectCategory(null) },
-                    label = { Text("Semua") },
-                    shape = RoundedCornerShape(20.dp),
+                    label = { Text("Semua", fontSize = 11.sp) },
+                    shape = RoundedCornerShape(16.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = GreenPrimary,
                         selectedLabelColor = Color.White,
@@ -699,8 +723,8 @@ fun ProductBrowseArea(
                 FilterChip(
                     selected = selectedCategory == cat.id,
                     onClick = { onSelectCategory(cat.id) },
-                    label = { Text(cat.name) },
-                    shape = RoundedCornerShape(20.dp),
+                    label = { Text(cat.name, fontSize = 11.sp) },
+                    shape = RoundedCornerShape(16.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = GreenPrimary,
                         selectedLabelColor = Color.White,
@@ -711,7 +735,7 @@ fun ProductBrowseArea(
             }
         }
 
-        // Products Grid
+        // Products Grid - minSize 100.dp agar muat 3 produk per baris di HP & landscape
         if (products.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -724,27 +748,23 @@ fun ProductBrowseArea(
                         imageVector = Icons.Default.PointOfSale,
                         contentDescription = null,
                         tint = MinimalBorder,
-                        modifier = Modifier.size(64.dp)
+                        modifier = Modifier.size(48.dp)
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Tidak ada produk ditemukan",
                         color = MinimalTextSecondary,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
             }
         } else {
-            // GridCells.Adaptive membuat jumlah kolom menyesuaikan lebar layar
-            // secara dinamis (HP kecil tetap 2 kolom, HP besar/tablet otomatis
-            // jadi 3-5 kolom) — sebelumnya Fixed(2) membuat setiap kartu produk
-            // melebar penuh & terlihat terlalu besar di layar lebar.
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 148.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                columns = GridCells.Adaptive(minSize = 100.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 items(products) { product ->
@@ -1072,125 +1092,124 @@ fun ProductCardClean(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(1.dp, MinimalBorder, RoundedCornerShape(16.dp))
+                .border(0.5.dp, MinimalBorder, RoundedCornerShape(12.dp))
                 .clickable(enabled = !isOut) { onAddToCart() },
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
-        Column(
-            modifier = Modifier.padding(10.dp)
-        ) {
-            // Foto produk (kalau ada). Fallback ke ikon kalau produk belum
-            // punya gambar yang diunggah di website.
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.15f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFFF0F4E9)),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.padding(6.dp)
             ) {
-                val imageUrl = product.primaryImageUrl
-                if (!imageUrl.isNullOrEmpty()) {
-                    coil.compose.AsyncImage(
-                        model = imageUrl,
-                        contentDescription = product.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Restaurant,
-                        contentDescription = null,
-                        tint = GreenPrimary.copy(alpha = 0.5f),
-                        modifier = Modifier.size(30.dp)
-                    )
+                // Foto produk
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(68.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFF0F4E9)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val imageUrl = product.primaryImageUrl
+                    if (!imageUrl.isNullOrEmpty()) {
+                        coil.compose.AsyncImage(
+                            model = imageUrl,
+                            contentDescription = product.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Restaurant,
+                            contentDescription = null,
+                            tint = GreenPrimary.copy(alpha = 0.5f),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-            Text(
-                text = product.name,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                color = MinimalTextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-            Text(
-                text = product.price.formatRupiah(),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = GreenPrimary
-            )
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
                 Text(
-                    text = "Stok: $effectiveStock",
-                    fontSize = 10.sp,
-                    color = MinimalTextSecondary
+                    text = product.name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 11.sp,
+                    color = MinimalTextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                if (product.variants.isNotEmpty()) {
+                Text(
+                    text = product.price.formatRupiah(),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = GreenPrimary
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "${product.variants.size} Varian",
+                        text = "Stok: $effectiveStock",
                         fontSize = 9.sp,
-                        color = GreenPrimary,
+                        color = MinimalTextSecondary
+                    )
+
+                    if (product.variants.isNotEmpty()) {
+                        Text(
+                            text = "${product.variants.size} Var",
+                            fontSize = 8.sp,
+                            color = GreenPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Button(
+                    onClick = onAddToCart,
+                    enabled = !isOut,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GreenAccent,
+                        contentColor = GreenAccentDark,
+                        disabledContainerColor = MinimalBorder
+                    ),
+                    contentPadding = PaddingValues(vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (isOut) "Habis" else "Tambah",
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Button(
-                onClick = onAddToCart,
-                enabled = !isOut,
-                modifier = Modifier.fillMaxWidth().height(32.dp),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = GreenAccent,
-                    contentColor = GreenAccentDark,
-                    disabledContainerColor = MinimalBorder
-                ),
-                contentPadding = PaddingValues(vertical = 4.dp)
-            ) {
-                Text(
-                    text = if (isOut) "Habis" else "Tambah",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
         }
 
-        // Badge angka jumlah produk ini yang sudah ada di keranjang — muncul
-        // begitu produk diklik/ditambahkan, mengambang di pojok kanan-atas
-        // kartu, mirip badge notifikasi.
+        // Badge jumlah produk di keranjang
         if (qtyInCart > 0) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(22.dp)
+                    .padding(4.dp)
+                    .size(20.dp)
                     .clip(CircleShape)
                     .background(Color(0xFFDC2626))
-                    .border(1.5.dp, Color.White, CircleShape),
+                    .border(1.dp, Color.White, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = if (qtyInCart > 99) "99+" else "$qtyInCart",
                     color = Color.White,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
