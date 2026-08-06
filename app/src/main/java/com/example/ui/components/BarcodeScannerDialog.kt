@@ -113,7 +113,7 @@ fun EmbeddedBarcodeScannerCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-                .padding(14.dp)
+                .padding(10.dp)
         ) {
             // Header Utama Card: Judul + Tombol Tutup
             Row(
@@ -124,7 +124,7 @@ fun EmbeddedBarcodeScannerCard(
                 Text(
                     text = "Kamera Barcode Scanner",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     color = Color(0xFF1E293B)
                 )
 
@@ -132,12 +132,12 @@ fun EmbeddedBarcodeScannerCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { onDismiss() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = "Tutup",
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFF64748B)
                     )
@@ -146,12 +146,12 @@ fun EmbeddedBarcodeScannerCard(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Tutup",
                         tint = Color(0xFF64748B),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Sub-card Kuning / Amber Container
             Card(
@@ -161,7 +161,7 @@ fun EmbeddedBarcodeScannerCard(
                     .fillMaxWidth()
                     .border(1.dp, Color(0xFFFDE68A), RoundedCornerShape(12.dp))
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(10.dp)) {
                     // Header Sub-card
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -173,13 +173,13 @@ fun EmbeddedBarcodeScannerCard(
                                 imageVector = Icons.Default.CameraAlt,
                                 contentDescription = null,
                                 tint = Color(0xFFD97706),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Scan Barcode / SKU Kamera",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 color = Color(0xFF78350F)
                             )
                         }
@@ -192,35 +192,35 @@ fun EmbeddedBarcodeScannerCard(
                                     isCameraActive = !isCameraActive
                                 }
                             },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             shape = RoundedCornerShape(20.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFFD97706),
                                 contentColor = Color.White
                             ),
-                            modifier = Modifier.height(32.dp)
+                            modifier = Modifier.height(28.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CameraAlt,
                                 contentDescription = null,
-                                modifier = Modifier.size(14.dp)
+                                modifier = Modifier.size(12.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = if (isCameraActive && hasCameraPermission) "Scan Kamera" else "Aktifkan Kamera",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Kotak Preview Kamera Hitam
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(132.dp)
+                            .height(100.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color.Black),
                         contentAlignment = Alignment.Center
@@ -234,7 +234,7 @@ fun EmbeddedBarcodeScannerCard(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth(0.85f)
-                                    .height(90.dp)
+                                    .height(64.dp)
                                     .border(2.dp, Color(0xFFF59E0B), RoundedCornerShape(12.dp))
                             )
 
@@ -276,7 +276,7 @@ fun EmbeddedBarcodeScannerCard(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Input Manual Barcode / SKU
                     Row(
@@ -286,13 +286,13 @@ fun EmbeddedBarcodeScannerCard(
                         OutlinedTextField(
                             value = manualCode,
                             onValueChange = { manualCode = it },
-                            placeholder = { Text("Ketik Barcode / SKU lalu Enter...", fontSize = 12.sp, color = Color(0xFF94A3B8)) },
+                            placeholder = { Text("Ketik Barcode / SKU lalu Enter...", fontSize = 11.sp, color = Color(0xFF94A3B8)) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Keyboard,
                                     contentDescription = null,
                                     tint = Color(0xFF64748B),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             },
                             singleLine = true,
@@ -306,9 +306,10 @@ fun EmbeddedBarcodeScannerCard(
                                 }
                             ),
                             shape = RoundedCornerShape(10.dp),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
                             modifier = Modifier
                                 .weight(1f)
-                                .height(48.dp),
+                                .height(40.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = Color.White,
                                 unfocusedContainerColor = Color.White,
@@ -331,9 +332,9 @@ fun EmbeddedBarcodeScannerCard(
                                 containerColor = Color(0xFF0F172A),
                                 contentColor = Color.White
                             ),
-                            modifier = Modifier.height(48.dp)
+                            modifier = Modifier.height(40.dp)
                         ) {
-                            Text("Scan", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Scan", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
