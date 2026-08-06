@@ -93,15 +93,15 @@ fun LoginScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(28.dp)
+                    .padding(24.dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Clean Minimal Logo Header Icon
                 Box(
                     modifier = Modifier
-                        .size(64.dp)
-                        .clip(RoundedCornerShape(20.dp))
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(16.dp))
                         .background(GreenPrimary),
                     contentAlignment = Alignment.Center
                 ) {
@@ -109,27 +109,27 @@ fun LoginScreen(
                         imageVector = Icons.Default.Storefront,
                         contentDescription = "Usahaki Logo",
                         tint = Color.White,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
                     text = "Usahaki.id",
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = GreenPrimary
                 )
 
                 Text(
                     text = "Aplikasi Kasir & Dapur",
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     color = MinimalTextSecondary,
                     fontWeight = FontWeight.Medium
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Error Banner
                 if (uiState is AuthUiState.Error) {
@@ -149,7 +149,7 @@ fun LoginScreen(
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
                 // Email Input
@@ -171,7 +171,7 @@ fun LoginScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Password Input
                 OutlinedTextField(
@@ -201,7 +201,7 @@ fun LoginScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Submit Button
                 Button(
@@ -209,8 +209,8 @@ fun LoginScreen(
                     enabled = uiState !is AuthUiState.Loading,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = GreenPrimary)
                 ) {
                     if (uiState is AuthUiState.Loading) {

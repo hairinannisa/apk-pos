@@ -161,7 +161,7 @@ fun CashierScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 CashierTabChip(
@@ -198,8 +198,8 @@ fun CashierScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(bills, key = { it.billKey }) { bill ->
@@ -215,8 +215,8 @@ fun CashierScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(paidOrders, key = { it.id }) { order ->
@@ -301,8 +301,8 @@ fun CashierScreen(
                         }
                     } else {
                         LazyColumn(
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(kitchenOrders, key = { it.id }) { tableOrder ->
@@ -379,7 +379,7 @@ private fun CashierTabChip(label: String, isSelected: Boolean, onClick: () -> Un
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = if (isSelected) Color.White else MinimalTextSecondary
@@ -399,16 +399,16 @@ private fun BillCard(bill: TableBill, onClick: () -> Unit) {
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, MinimalBorder)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(bill.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = MinimalTextPrimary)
-                Text(bill.total.formatRupiah(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GreenPrimary)
+                Text(bill.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = MinimalTextPrimary)
+                Text(bill.total.formatRupiah(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GreenPrimary)
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = bill.customerNames.joinToString(", "),
                 fontSize = 12.sp,
@@ -460,7 +460,7 @@ private fun PayBillDialog(
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(20.dp)
+                        .padding(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -499,7 +499,7 @@ private fun PayBillDialog(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Total Tagihan", fontSize = 12.sp, color = MinimalTextSecondary)
-                            Text(bill.total.formatRupiah(), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = GreenPrimary)
+                            Text(bill.total.formatRupiah(), fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = GreenPrimary)
                         }
                     }
 
@@ -583,7 +583,7 @@ private fun PayBillDialog(
                     }
                 }
 
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Button(
                         onClick = {
                             cashierViewModel.payBill(bill, selectedMethod, proofUrl)
@@ -591,7 +591,7 @@ private fun PayBillDialog(
                         enabled = paymentState !is PaymentState.Processing &&
                             (selectedMethod != "cash" || cashReceived >= bill.total) &&
                             (!needsProof || proofUrl != null),
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = GreenAccent, contentColor = GreenAccentDark)
                     ) {

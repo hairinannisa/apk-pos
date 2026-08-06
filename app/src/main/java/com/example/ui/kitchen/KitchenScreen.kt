@@ -195,7 +195,7 @@ fun KitchenScreen(
                                 Text(
                                     text = "Antrian Dapur (Kitchen)",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
+                                    fontSize = 16.sp,
                                     color = Color(0xFFEA580C)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -225,7 +225,7 @@ fun KitchenScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MinimalBackground)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     KitchenTabChip(
@@ -257,8 +257,8 @@ fun KitchenScreen(
                     EmptyKitchenState()
                 } else {
                     LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(orders, key = { it.id }) { tableOrder ->
@@ -359,7 +359,7 @@ private fun KitchenTabChip(label: String, isSelected: Boolean, onClick: () -> Un
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             color = if (isSelected) Color.White else MinimalTextSecondary
@@ -375,13 +375,13 @@ private fun EmptyKitchenState() {
                 imageVector = Icons.Default.Restaurant,
                 contentDescription = null,
                 tint = MinimalBorder,
-                modifier = Modifier.size(72.dp)
+                modifier = Modifier.size(56.dp)
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Tidak Ada Antrian Pesanan",
                 color = MinimalTextPrimary,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
@@ -449,7 +449,7 @@ fun KitchenOrderCardClean(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(cardHeaderColor)
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -466,7 +466,7 @@ fun KitchenOrderCardClean(
                                 order.customerName.ifBlank { "Pesanan #${order.id.takeLast(4).uppercase()}" }
                             }.uppercase(),
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             color = Color.White
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -505,8 +505,8 @@ fun KitchenOrderCardClean(
 
             // Items Checklist
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 order.items.forEachIndexed { index, item ->
                     KitchenItemRowClean(
@@ -521,7 +521,7 @@ fun KitchenOrderCardClean(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
@@ -570,7 +570,7 @@ fun KitchenItemRowClean(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -582,23 +582,23 @@ fun KitchenItemRowClean(
                     imageVector = if (isDone) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                     contentDescription = null,
                     tint = if (isDone) GreenPrimary else MinimalTextSecondary,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp)
                 )
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "${item.qty}x ",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             color = if (isDone) MinimalTextSecondary else GreenPrimary
                         )
                         Text(
                             text = item.name,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             color = if (isDone) MinimalTextSecondary else MinimalTextPrimary,
                             textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None
                         )
@@ -628,7 +628,7 @@ fun KitchenItemRowClean(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (isDone) GreenAccent else MinimalBorder)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = if (isDone) "SELESAI" else "TANDAI",

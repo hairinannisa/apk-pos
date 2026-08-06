@@ -225,7 +225,7 @@ fun PosScreen(
                         Text(
                             text = "Usahaki.id",
                             fontWeight = FontWeight.Bold,
-                            fontSize = if (isLandscape) 15.sp else 18.sp,
+                            fontSize = if (isLandscape) 14.sp else 16.sp,
                             color = GreenPrimary
                         )
                         RoleBadge(role = user.role)
@@ -235,46 +235,46 @@ fun PosScreen(
                 actions = {
                     IconButton(
                         onClick = { showPrinterSettings = true },
-                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                        modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Print,
                             contentDescription = "Pengaturan Printer Thermal",
                             tint = MinimalTextSecondary,
-                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
+                            modifier = Modifier.size(if (isLandscape) 16.dp else 19.dp)
                         )
                     }
                     IconButton(
                         onClick = { showCashierQueue = true },
-                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                        modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Receipt,
                             contentDescription = "Bayar Pesanan Meja",
                             tint = MinimalTextSecondary,
-                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
+                            modifier = Modifier.size(if (isLandscape) 16.dp else 19.dp)
                         )
                     }
                     IconButton(
                         onClick = { showHistoryDialog = true },
-                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                        modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = "Riwayat Transaksi",
                             tint = MinimalTextSecondary,
-                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
+                            modifier = Modifier.size(if (isLandscape) 16.dp else 19.dp)
                         )
                     }
                     IconButton(
                         onClick = onLogout,
-                        modifier = Modifier.size(if (isLandscape) 36.dp else 44.dp)
+                        modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "Keluar",
                             tint = MinimalTextSecondary,
-                            modifier = Modifier.size(if (isLandscape) 18.dp else 22.dp)
+                            modifier = Modifier.size(if (isLandscape) 16.dp else 19.dp)
                         )
                     }
                 },
@@ -288,14 +288,14 @@ fun PosScreen(
             if (!isLandscape && cartItems.isNotEmpty()) {
                 Surface(
                     color = MinimalBackground,
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(20.dp))
                             .background(GreenPrimary)
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -305,8 +305,8 @@ fun PosScreen(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
                                         .background(Color.White.copy(alpha = 0.2f)),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -314,20 +314,20 @@ fun PosScreen(
                                         imageVector = Icons.Default.ShoppingBasket,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(12.dp))
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
                                         text = "${cartItems.sumOf { it.qty }} Items",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White.copy(alpha = 0.8f)
                                     )
                                     Text(
                                         text = totalAmount.formatRupiah(),
-                                        fontSize = 17.sp,
+                                        fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
                                     )
@@ -336,17 +336,17 @@ fun PosScreen(
 
                             Button(
                                 onClick = { showCartSheet = true },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = GreenAccent,
                                     contentColor = GreenAccentDark
                                 ),
-                                modifier = Modifier.height(44.dp)
+                                modifier = Modifier.height(38.dp)
                             ) {
                                 Text(
                                     text = "Bayar",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                             }
                         }
@@ -645,7 +645,7 @@ fun ProductBrowseArea(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = if (isLandscape) 4.dp else 8.dp),
+                .padding(horizontal = 12.dp, vertical = if (isLandscape) 4.dp else 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -675,7 +675,7 @@ fun ProductBrowseArea(
 
             Box(
                 modifier = Modifier
-                    .size(if (isLandscape) 36.dp else 40.dp)
+                    .size(if (isLandscape) 34.dp else 38.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (showBarcodeScanner) GreenAccentDark else GreenPrimary)
                     .clickable { onScanClick() },
@@ -685,7 +685,7 @@ fun ProductBrowseArea(
                     imageVector = Icons.Default.QrCodeScanner,
                     contentDescription = "Pindai Barcode",
                     tint = Color.White,
-                    modifier = Modifier.size(if (isLandscape) 18.dp else 20.dp)
+                    modifier = Modifier.size(if (isLandscape) 16.dp else 18.dp)
                 )
             }
         }
@@ -703,7 +703,7 @@ fun ProductBrowseArea(
         LazyRow(
             contentPadding = PaddingValues(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(bottom = if (isLandscape) 4.dp else 8.dp)
+            modifier = Modifier.padding(bottom = if (isLandscape) 4.dp else 6.dp)
         ) {
             item {
                 FilterChip(
@@ -761,10 +761,10 @@ fun ProductBrowseArea(
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 100.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                columns = GridCells.Adaptive(minSize = 96.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.weight(1f)
             ) {
                 items(products) { product ->
@@ -806,7 +806,7 @@ fun CartPanelContent(
         ) {
             Text(
                 text = "Keranjang Pesanan",
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = MinimalTextPrimary
             )
@@ -814,16 +814,17 @@ fun CartPanelContent(
                 Icon(
                     imageVector = Icons.Default.Delete,
                     contentDescription = "Kosongkan Keranjang",
-                    tint = Color(0xFFDC2626)
+                    tint = Color(0xFFDC2626),
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (cartItems.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxWidth().height(180.dp),
+                modifier = Modifier.fillMaxWidth().height(96.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text("Keranjang masih kosong", fontSize = 13.sp, color = MinimalTextSecondary)
@@ -833,8 +834,8 @@ fun CartPanelContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f, fill = false)
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .heightIn(max = 320.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(cartItems) { item ->
                     CartItemRowClean(
@@ -846,22 +847,22 @@ fun CartPanelContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Total Bayar", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("Total Bayar", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Text(
                 totalAmount.formatRupiah(),
-                fontSize = 19.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 color = GreenPrimary
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Tombol dibuat sejajar (Row) dan ukurannya menyesuaikan isi teksnya
         // sendiri (tidak dipaksa satu baris memanjang) — teks dibungkus rapi
@@ -875,9 +876,9 @@ fun CartPanelContent(
                 OutlinedButton(
                     onClick = onSave,
                     enabled = cartItems.isNotEmpty(),
-                    modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = "Simpan ke Antrian",
@@ -894,13 +895,13 @@ fun CartPanelContent(
             Button(
                 onClick = onCheckout,
                 enabled = cartItems.isNotEmpty(),
-                modifier = Modifier.weight(1f).heightIn(min = 50.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 44.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = GreenAccent,
                     contentColor = GreenAccentDark
                 ),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = "Bayar Sekarang",
@@ -941,10 +942,10 @@ fun SaveToKitchenDialog(
                 .fillMaxWidth()
                 .border(1.dp, MinimalBorder, RoundedCornerShape(24.dp))
         ) {
-            Column(modifier = Modifier.padding(24.dp)) {
+            Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                     "Simpan ke Antrian Dapur",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = MinimalTextPrimary
                 )
@@ -954,9 +955,9 @@ fun SaveToKitchenDialog(
                     color = MinimalTextSecondary
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text("Jenis Pesanan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("table" to "Meja", "no_table" to "Tanpa Meja", "takeaway" to "Bungkus").forEach { (key, label) ->
                         val isSelected = orderCategory == key
@@ -968,7 +969,7 @@ fun SaveToKitchenDialog(
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = if (isSelected) GreenPrimary else Color(0xFFF1F5F9))
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
                                 Text(
                                     label,
                                     fontSize = 11.sp,
@@ -989,7 +990,7 @@ fun SaveToKitchenDialog(
                     } else {
                         Text("Pilih Meja", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MinimalTextSecondary)
                         Spacer(modifier = Modifier.height(6.dp))
-                        Box(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                        Box(modifier = Modifier.fillMaxWidth().height(112.dp)) {
                             LazyVerticalGrid(
                                 columns = GridCells.Fixed(3),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1010,7 +1011,7 @@ fun SaveToKitchenDialog(
                                         )
                                     ) {
                                         Column(
-                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
                                             Text(
@@ -1048,7 +1049,7 @@ fun SaveToKitchenDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
@@ -1099,13 +1100,13 @@ fun ProductCardClean(
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(
-                modifier = Modifier.padding(6.dp)
+                modifier = Modifier.padding(5.dp)
             ) {
                 // Foto produk
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(68.dp)
+                        .height(52.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(0xFFF0F4E9)),
                     contentAlignment = Alignment.Center
@@ -1233,7 +1234,7 @@ fun CartItemRowClean(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1241,12 +1242,12 @@ fun CartItemRowClean(
                 Text(
                     text = cartItem.displayName,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = MinimalTextPrimary
                 )
                 Text(
                     text = "${cartItem.qty} x ${cartItem.unitPrice.formatRupiah()}",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = MinimalTextSecondary
                 )
             }
@@ -1256,11 +1257,11 @@ fun CartItemRowClean(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(MinimalBorder)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                    .padding(horizontal = 2.dp, vertical = 2.dp)
             ) {
                 IconButton(
                     onClick = onDecrement,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(26.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Remove,
@@ -1272,13 +1273,13 @@ fun CartItemRowClean(
                 Text(
                     text = "${cartItem.qty}",
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                    fontSize = 13.sp
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                    fontSize = 12.sp
                 )
 
                 IconButton(
                     onClick = onIncrement,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(26.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -1392,7 +1393,7 @@ fun CheckoutDialogClean(
             colors = CardDefaults.cardColors(containerColor = Color.White),
             modifier = Modifier
                 .fillMaxWidth(if (isWideScreen) 0.88f else 0.95f)
-                .fillMaxHeight(0.92f)
+                .fillMaxHeight(0.88f)
                 .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(24.dp))
         ) {
             if (isWideScreen) {
@@ -1470,7 +1471,7 @@ fun CheckoutDialogClean(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(20.dp)
+                        .padding(16.dp)
                 ) {
                     CheckoutLeftContent(
                         selectedMethod = selectedMethod,
@@ -1549,12 +1550,12 @@ private fun CheckoutLeftContent(
 ) {
     Text(
         text = "Pilih Metode Pembayaran",
-        fontSize = 18.sp,
+        fontSize = 16.sp,
         fontWeight = FontWeight.Bold,
         color = Color(0xFF1E293B)
     )
 
-    Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1584,7 +1585,7 @@ private fun CheckoutLeftContent(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp, horizontal = 8.dp),
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -1592,9 +1593,9 @@ private fun CheckoutLeftContent(
                         imageVector = icon,
                         contentDescription = label,
                         tint = if (isSelected) Color(0xFF8C6218) else Color(0xFF64748B),
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = label,
                         fontSize = 11.sp,
@@ -1799,7 +1800,7 @@ private fun CheckoutLeftContent(
                     color = Color(0xFFDC2626)
                 )
             } else {
-                Box(modifier = Modifier.fillMaxWidth().height(120.dp)) {
+                Box(modifier = Modifier.fillMaxWidth().height(96.dp)) {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(3),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1822,7 +1823,7 @@ private fun CheckoutLeftContent(
                                 )
                             ) {
                                 Column(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
@@ -1896,28 +1897,28 @@ private fun CheckoutRightPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Tagihan:", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+                Text("Tagihan:", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
                 Text(
                     totalAmount.formatRupiah(),
-                    fontSize = 22.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color(0xFFB45309)
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("KEMBALIAN:", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
+                Text("KEMBALIAN:", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF15803D))
                 Text(
                     text = if (selectedMethod == "cash") {
                         if (change >= 0) change.formatRupiah() else "Kurang ${(totalAmount - cashReceived).formatRupiah()}"
                     } else "Rp 0",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF15803D)
                 )
@@ -1929,13 +1930,13 @@ private fun CheckoutRightPanel(
             }
         }
 
-        Column(modifier = Modifier.padding(top = 24.dp)) {
+        Column(modifier = Modifier.padding(top = 16.dp)) {
             Button(
                 onClick = onConfirm,
                 enabled = isValid,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(48.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF0F5128),
@@ -1957,7 +1958,7 @@ private fun CheckoutRightPanel(
                 onClick = onDismiss,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
+                    .height(44.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF475569))
             ) {
@@ -2181,7 +2182,7 @@ fun ReceiptDialogClean(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(40.dp)
                     ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -2201,7 +2202,7 @@ fun ReceiptDialogClean(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(40.dp)
                     ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
@@ -2234,7 +2235,7 @@ fun ReceiptDialogClean(
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp)
+                            .height(40.dp)
                     ) {
                         if (isPrinting) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
@@ -2274,7 +2275,7 @@ fun ReceiptDialogClean(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(44.dp)
+                        .height(40.dp)
                 ) {
                     Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFF334155))
                     Spacer(modifier = Modifier.width(6.dp))
@@ -2289,7 +2290,7 @@ fun ReceiptDialogClean(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(42.dp)
+                        .height(38.dp)
                 ) {
                     Icon(Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
                     Spacer(modifier = Modifier.width(6.dp))

@@ -220,7 +220,7 @@ fun EmbeddedBarcodeScannerCard(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(160.dp)
+                            .height(132.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color.Black),
                         contentAlignment = Alignment.Center
