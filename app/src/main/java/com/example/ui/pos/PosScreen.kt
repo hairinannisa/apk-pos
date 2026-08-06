@@ -645,24 +645,27 @@ fun ProductBrowseArea(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = if (isLandscape) 4.dp else 6.dp),
+                .padding(horizontal = 12.dp, vertical = if (isLandscape) 2.dp else 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
                 placeholder = { Text("Cari produk...", color = MinimalTextSecondary, fontSize = 12.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(18.dp)) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(16.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                        IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(22.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(15.dp))
                         }
                     }
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp),
                 shape = RoundedCornerShape(12.dp),
                 singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = GreenPrimary,
                     unfocusedBorderColor = MinimalBorder,
@@ -675,7 +678,7 @@ fun ProductBrowseArea(
 
             Box(
                 modifier = Modifier
-                    .size(if (isLandscape) 34.dp else 38.dp)
+                    .size(if (isLandscape) 30.dp else 34.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(if (showBarcodeScanner) GreenAccentDark else GreenPrimary)
                     .clickable { onScanClick() },
@@ -685,7 +688,7 @@ fun ProductBrowseArea(
                     imageVector = Icons.Default.QrCodeScanner,
                     contentDescription = "Pindai Barcode",
                     tint = Color.White,
-                    modifier = Modifier.size(if (isLandscape) 16.dp else 18.dp)
+                    modifier = Modifier.size(if (isLandscape) 15.dp else 17.dp)
                 )
             }
         }
