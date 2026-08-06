@@ -379,7 +379,7 @@ fun PosScreen(
             }
 
             ProductBrowseArea(
-                modifier = Modifier.weight(1.4f),
+                modifier = Modifier.weight(1.6f),
                 searchQuery = searchQuery,
                 categories = categories,
                 selectedCategory = selectedCategory,
@@ -397,7 +397,7 @@ fun PosScreen(
 
             Box(
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(0.85f)
                     .fillMaxHeight()
                     .background(Color.White)
                     .border(1.dp, MinimalBorder, RoundedCornerShape(0.dp))
@@ -411,7 +411,7 @@ fun PosScreen(
                     onClearCart = { posViewModel.clearCart() },
                     onSave = { showSaveQueueDialog = true },
                     onCheckout = { showCheckoutDialog = true },
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier.padding(12.dp)
                 )
             }
         }
@@ -662,10 +662,10 @@ fun ProductBrowseArea(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(38.dp),
-                shape = RoundedCornerShape(12.dp),
+                    .height(34.dp),
+                shape = RoundedCornerShape(10.dp),
                 singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = GreenPrimary,
                     unfocusedBorderColor = MinimalBorder,
@@ -879,13 +879,13 @@ fun CartPanelContent(
                 OutlinedButton(
                     onClick = onSave,
                     enabled = cartItems.isNotEmpty(),
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                    modifier = Modifier.weight(1f).height(34.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = "Simpan ke Antrian",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = GreenPrimary,
                         textAlign = TextAlign.Center,
@@ -898,17 +898,17 @@ fun CartPanelContent(
             Button(
                 onClick = onCheckout,
                 enabled = cartItems.isNotEmpty(),
-                modifier = Modifier.weight(1f).heightIn(min = 44.dp),
-                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.weight(1f).height(34.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = GreenAccent,
                     contentColor = GreenAccentDark
                 ),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp)
             ) {
                 Text(
                     text = "Bayar Sekarang",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
