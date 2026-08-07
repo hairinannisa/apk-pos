@@ -41,6 +41,10 @@ data class ReceiptItemData(
 data class ReceiptData(
     val businessName: String,
     val branchName: String? = null,
+    /** Alamat toko (Pengaturan > Struk website) — null/kosong = tidak dicetak. */
+    val storeAddress: String? = null,
+    /** Baris tambahan custom di bawah nama/alamat toko (Pengaturan > Struk). */
+    val headerText: String? = null,
     val orderId: String,
     val orderTypeLabel: String? = null,
     val customerName: String? = null,
@@ -51,7 +55,9 @@ data class ReceiptData(
     val paymentMethod: String,
     val cashPaid: Double? = null,
     val change: Double? = null,
-    val notes: String? = null
+    val notes: String? = null,
+    /** Teks penutup custom (Pengaturan > Struk), gantikan default "Terima Kasih Atas Kunjungan Anda!". */
+    val footerText: String? = null
 )
 
 class ThermalPrinterManager(private val context: Context) {
@@ -311,6 +317,12 @@ class ThermalPrinterManager(private val context: Context) {
         if (!receipt.branchName.isNull_or_empty()) {
             writeString("${receipt.branchName}\n")
         }
+        if (!receipt.storeAddress.isNullOrEmpty()) {
+            writeString("${receipt.storeAddress}\n")
+        }
+        if (!receipt.headerText.isNullOrEmpty()) {
+            writeString("${receipt.headerText}\n")
+        }
 
         val sepDouble = "=".repeat(maxChars) + "\n"
         val sepSingle = "-".repeat(maxChars) + "\n"
@@ -369,7 +381,15 @@ class ThermalPrinterManager(private val context: Context) {
 
         // Center Align for Footer
         writeBytes(byteArrayOf(ESC, 0x61, 0x01))
-        writeString("Terima Kasih Atas Kunjungan Anda!\n")
+        // Pakai footer custom dari Pengaturan > Struk website kalau owner
+        // sudah mengaturnya (settings/{businessId}.receipt.footerText) —
+        // SEBELUMNYA baris ini selalu hardcode "Terima Kasih Atas Kunjungan
+        // Anda!" walau owner sudah kustomisasi footer struknya di website.
+        if (!receipt.footerText.isNullOrEmpty()) {
+            writeString("${receipt.footerText}\n")
+        } else {
+            writeString("Terima Kasih Atas Kunjungan Anda!\n")
+        }
         writeString("Powered by Usahaki POS\n")
 
         // Feed paper 4 lines (ESC d 4)
@@ -402,11 +422,16 @@ class ThermalPrinterManager(private val context: Context) {
 fun com.example.data.model.Order.toReceiptData(
     businessName: String,
     branchName: String? = null,
-    cashierName: String
+    cashierName: String,
+    storeAddress: String? = null,
+    headerText: String? = null,
+    footerText: String? = null
 ): ReceiptData {
     return ReceiptData(
         businessName = businessName,
         branchName = branchName,
+        storeAddress = storeAddress,
+        headerText = headerText,
         orderId = id.ifBlank { "POS-${System.currentTimeMillis() % 100000}" },
         orderTypeLabel = when (orderType) {
             "dine_in" -> "Dine In (${tableName ?: "Meja"})"
@@ -428,18 +453,24 @@ fun com.example.data.model.Order.toReceiptData(
             )
         },
         totalAmount = totalAmount,
-        paymentMethod = paymentMethod
+        paymentMethod = paymentMethod,
+        footerText = footerText
     )
 }
 
 fun com.example.data.model.TableOrder.toReceiptData(
     businessName: String,
     branchName: String? = null,
-    cashierName: String
+    cashierName: String,
+    storeAddress: String? = null,
+    headerText: String? = null,
+    footerText: String? = null
 ): ReceiptData {
     return ReceiptData(
         businessName = businessName,
         branchName = branchName,
+        storeAddress = storeAddress,
+        headerText = headerText,
         orderId = orderCode ?: id.take(12),
         orderTypeLabel = when (orderType) {
             "dine_in" -> "Dine In (${tableName.ifBlank { "Meja" }})"
@@ -460,7 +491,8 @@ fun com.example.data.model.TableOrder.toReceiptData(
             )
         },
         totalAmount = totalAmount,
-        paymentMethod = paymentMethod ?: "cash"
+        paymentMethod = paymentMethod ?: "cash",
+        footerText = footerText
     )
 }
 

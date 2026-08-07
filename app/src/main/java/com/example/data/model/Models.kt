@@ -32,6 +32,20 @@ data class Branch(
     val isActive: Boolean = true
 )
 
+/**
+ * Kustomisasi struk (Pengaturan > Struk di website — src/types/website.types.ts
+ * `ReceiptSettings`). Disimpan di dokumen settings/{businessId}, field `receipt`
+ * (map, bukan koleksi terpisah). Semua nullable karena owner boleh belum
+ * pernah mengatur apa pun — ThermalPrinterManager sudah punya fallback teks
+ * default yang identik dengan default di website kalau field ini kosong.
+ */
+@IgnoreExtraProperties
+data class ReceiptSettings(
+    val headerText: String? = null,
+    val footerText: String? = null,
+    val storeAddress: String? = null
+)
+
 @IgnoreExtraProperties
 data class ProductVariant(
     val name: String = "",

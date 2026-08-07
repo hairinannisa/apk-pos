@@ -11,6 +11,7 @@ import com.example.data.model.DiningTable
 import com.example.data.model.Order
 import com.example.data.model.OrderItem
 import com.example.data.model.Product
+import com.example.data.model.ReceiptSettings
 import com.example.data.model.TableOrder
 import com.example.data.model.TableOrderItem
 import com.example.data.model.Transaction
@@ -109,6 +110,32 @@ class UsahakiRepository(context: Context) {
             } else null
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching business", e)
+            null
+        }
+    }
+
+    /**
+     * Kustomisasi header/footer/alamat struk yang diatur owner lewat
+     * Pengaturan > Struk di website (settings/{businessId}.receipt).
+     * SEBELUMNYA aplikasi mobile ini sama sekali tidak membaca dokumen
+     * `settings` — nama toko & teks struk selalu hardcode di kode Kotlin,
+     * jadi kustomisasi yang diatur owner lewat website tidak pernah
+     * terpakai saat cetak dari HP. Null kalau owner belum pernah mengatur
+     * apa pun (bukan error) — pemanggil sudah punya fallback default.
+     */
+    suspend fun fetchReceiptSettings(businessId: String): ReceiptSettings? {
+        if (businessId.isEmpty()) return null
+        return try {
+            val doc = db.collection("settings").document(businessId).get().await()
+            if (!doc.exists()) return null
+            val receiptMap = doc.get("receipt") as? Map<*, *> ?: return null
+            ReceiptSettings(
+                headerText = receiptMap["headerText"] as? String,
+                footerText = receiptMap["footerText"] as? String,
+                storeAddress = receiptMap["storeAddress"] as? String
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching receipt settings", e)
             null
         }
     }
@@ -415,20 +442,71 @@ class UsahakiRepository(context: Context) {
             batch.set(orderRef, newOrder)
             batch.set(transactionRef, newTransaction)
 
-            // Stock reduction logic
+            // Stock reduction logic — HARUS ikut branchId (stockByBranch) &
+            // varian yang dipilih, PERSIS seperti posService.createPOSOrder
+            // di website (src/modules/pos/services/posService.ts). SEBELUMNYA
+            // method ini SELALU mengurangi field `stock` dasar produk saja —
+            // walau transaksi terjadi di cabang tertentu (harusnya
+            // stockByBranch.{branchId} yang dikurangi) atau produknya varian
+            // (harusnya stok varian yang dikurangi, BUKAN stok dasar produk).
+            // Akibatnya angka stok yang tampil di website jadi meleset dari
+            // kenyataan setiap kali ada penjualan lewat aplikasi mobile:
+            // stok cabang/varian di website tidak pernah berkurang, sementara
+            // stok pusat malah ikut berkurang padahal transaksinya di cabang.
             for (cart in cartItems) {
                 val prodRef = db.collection("products").document(cart.product.id)
-                val currentStock = cart.product.stock
-                val newStock = maxOf(0, currentStock - cart.qty)
-                batch.update(prodRef, "stock", newStock)
-            }
+                val variant = cart.selectedVariant
 
-            var createdTableOrderRef: com.google.firebase.firestore.DocumentReference? = null
+                if (variant != null && cart.product.variants.isNotEmpty()) {
+                    val updatedVariants = cart.product.variants.map { v ->
+                        if (v.name == variant.name) {
+                            if (!operatingBranchId.isNullOrEmpty()) {
+                                val current = v.stockByBranch?.get(operatingBranchId) ?: v.stock
+                                val newMap = (v.stockByBranch ?: emptyMap()).toMutableMap()
+                                newMap[operatingBranchId] = maxOf(0, current - cart.qty)
+                                v.copy(stockByBranch = newMap)
+                            } else {
+                                v.copy(stock = maxOf(0, v.stock - cart.qty))
+                            }
+                        } else v
+                    }
+                    batch.update(prodRef, "variants", updatedVariants)
+                } else if (!operatingBranchId.isNullOrEmpty()) {
+                    // Stok cabang tertentu: kurangi HANYA key cabang ini di
+                    // map stockByBranch (dot-path field update) — key cabang
+                    // lain tidak ikut tertimpa, aman untuk transaksi
+                    // konkuren dari cabang berbeda (sama seperti web).
+                    val current = cart.product.stockByBranch?.get(operatingBranchId) ?: cart.product.stock
+                    batch.update(prodRef, "stockByBranch.$operatingBranchId", maxOf(0, current - cart.qty))
+                } else {
+                    val newStock = maxOf(0, cart.product.stock - cart.qty)
+                    batch.update(prodRef, "stock", newStock)
+                }
+
+                // Inventory log — supaya penjualan lewat app mobile juga
+                // tercatat di riwayat pergerakan stok website (koleksi
+                // `inventories`), bukan cuma diam-diam mengubah angka stok
+                // tanpa jejak seperti sebelumnya.
+                val invRef = db.collection("inventories").document()
+                batch.set(
+                    invRef,
+                    mapOf(
+                        "id" to invRef.id,
+                        "businessId" to user.businessId,
+                        "branchId" to operatingBranchId,
+                        "productId" to cart.product.id,
+                        "type" to "out",
+                        "quantity" to cart.qty,
+                        "supplierId" to null,
+                        "reason" to "penjualan",
+                        "date" to nowStr
+                    )
+                )
+            }
 
             // Untuk pesanan F&B (meja/tanpa meja/bungkus), kirim juga ke antrian dapur ("tableorders")
             if (mappedOrderType != null) {
                 val tableOrderRef = db.collection("tableorders").document()
-                createdTableOrderRef = tableOrderRef
                 val queueNumber = ((System.currentTimeMillis() % 86400000L) / 10000L % 900L + 100L).toInt()
                 val orderCode = "MQ-${Random.nextInt(1000, 10000)}"
                 val tableItems = cartItems.map { cart ->
@@ -441,6 +519,17 @@ class UsahakiRepository(context: Context) {
                         status = "done" // Sudah dibayar & selesai langsung di kasir mobile.
                     )
                 }
+                // Langsung dibuat dengan status FINAL (completed/paid) dalam SATU
+                // batch yang sama dengan Order/Transaction/stok di atas — TIDAK
+                // lagi lewat 2 langkah (buat sbg 'pending' lalu update ke
+                // 'completed' sesaat kemudian). Sebelumnya firestore.rules
+                // mewajibkan status='pending' saat dibuat, jadi TERPAKSA 2
+                // langkah; sekarang staf yang login boleh langsung membuat
+                // dengan status final (lihat firestore.rules tableorders create).
+                // Akibat langkah lama: pesanan sempat "berkedip" sekilas sebagai
+                // "perlu diproses dapur" di layar Kitchen/Antrian website
+                // sebelum ditandai selesai — sekarang tidak ada jeda sama sekali
+                // karena dari awal sudah tercatat selesai & lunas.
                 val newTableOrder = TableOrder(
                     id = tableOrderRef.id,
                     businessId = user.businessId,
@@ -456,9 +545,9 @@ class UsahakiRepository(context: Context) {
                     isCallByName = isCallByName,
                     paymentMethod = normalizedMethod,
                     paymentProofUrl = paymentProofUrl,
-                    status = "pending",
-                    paymentStatus = "unpaid",
-                    completedAt = null,
+                    status = "completed",
+                    paymentStatus = "paid",
+                    completedAt = nowStr,
                     createdAt = nowStr
                 )
                 batch.set(tableOrderRef, newTableOrder)
@@ -470,21 +559,6 @@ class UsahakiRepository(context: Context) {
             }
 
             batch.commit().await()
-
-            // Update status ke completed & paid untuk tableorder yang baru saja dibuat & di-commit
-            if (createdTableOrderRef != null) {
-                try {
-                    createdTableOrderRef.update(
-                        mapOf(
-                            "status" to "completed",
-                            "paymentStatus" to "paid",
-                            "completedAt" to nowStr
-                        )
-                    ).await()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Table order set to paid post-commit warning: ${e.message}")
-                }
-            }
 
             Result.success(newOrder)
         } catch (e: Exception) {
@@ -663,15 +737,73 @@ class UsahakiRepository(context: Context) {
             val allDone = allItems.all { it.status == "done" }
             val anyDone = allItems.any { it.status == "done" }
             val newStatus = if (allDone) "completed" else if (anyDone) "preparing" else "pending"
+            val nowStr = currentIsoTimestamp()
 
-            db.collection("tableorders").document(order.id).update(
+            val batch = db.batch()
+            batch.update(
+                db.collection("tableorders").document(order.id),
                 mapOf(
                     "items" to allItems,
                     "totalAmount" to newTotal,
                     "status" to newStatus,
-                    "completedAt" to if (newStatus == "completed") currentIsoTimestamp() else null
+                    "completedAt" to if (newStatus == "completed") nowStr else null,
+                    "lastModifiedAt" to nowStr
                 )
-            ).await()
+            )
+
+            // Kurangi stok utk item yang baru ditambahkan — PERSIS logika yang
+            // sama dengan processCheckout (branchId & varian-aware).
+            // SEBELUMNYA fungsi ini HANYA mengubah dokumen tableorders, sama
+            // sekali tidak menyentuh stok produk/riwayat `inventories` — jadi
+            // item yang ditambahkan susulan lewat kasir (mis. self service
+            // yang diberitahukan pelanggan) tidak pernah tercatat di stok
+            // maupun laporan pergerakan stok website.
+            val branchId = order.branchId
+            for (item in formattedNewItems) {
+                if (item.productId.isBlank()) continue // Item self-service generik (bukan produk asli) tidak punya stok untuk dikurangi.
+                val prodRef = db.collection("products").document(item.productId)
+                val prodSnap = prodRef.get().await()
+                val product = prodSnap.toObject(Product::class.java) ?: continue
+
+                if (item.variant != null && product.variants.isNotEmpty()) {
+                    val updatedVariants = product.variants.map { v ->
+                        if (v.name == item.variant) {
+                            if (!branchId.isNullOrEmpty()) {
+                                val current = v.stockByBranch?.get(branchId) ?: v.stock
+                                val newMap = (v.stockByBranch ?: emptyMap()).toMutableMap()
+                                newMap[branchId] = maxOf(0, current - item.qty)
+                                v.copy(stockByBranch = newMap)
+                            } else {
+                                v.copy(stock = maxOf(0, v.stock - item.qty))
+                            }
+                        } else v
+                    }
+                    batch.update(prodRef, "variants", updatedVariants)
+                } else if (!branchId.isNullOrEmpty()) {
+                    val current = product.stockByBranch?.get(branchId) ?: product.stock
+                    batch.update(prodRef, "stockByBranch.$branchId", maxOf(0, current - item.qty))
+                } else {
+                    batch.update(prodRef, "stock", maxOf(0, product.stock - item.qty))
+                }
+
+                val invRef = db.collection("inventories").document()
+                batch.set(
+                    invRef,
+                    mapOf(
+                        "id" to invRef.id,
+                        "businessId" to order.businessId,
+                        "branchId" to branchId,
+                        "productId" to item.productId,
+                        "type" to "out",
+                        "quantity" to item.qty,
+                        "supplierId" to null,
+                        "reason" to "penjualan",
+                        "date" to nowStr
+                    )
+                )
+            }
+
+            batch.commit().await()
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Error adding items to table order", e)

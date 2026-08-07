@@ -4,6 +4,8 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.Business
+import com.example.data.model.ReceiptSettings
 import com.example.data.model.TableOrder
 import com.example.data.model.User
 import com.example.data.repository.UsahakiRepository
@@ -45,6 +47,16 @@ class CashierViewModel(application: Application) : AndroidViewModel(application)
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
 
+    // Nama bisnis asli + kustomisasi struk (Pengaturan > Struk website) —
+    // SEBELUMNYA struk yang dicetak dari halaman Kasir mobile ini selalu
+    // pakai nama bisnis hardcode "USAHAKI POS", tidak pernah baca data
+    // sungguhan dari Firestore sama sekali.
+    private val _business = MutableStateFlow<Business?>(null)
+    val business: StateFlow<Business?> = _business.asStateFlow()
+
+    private val _receiptSettings = MutableStateFlow<ReceiptSettings?>(null)
+    val receiptSettings: StateFlow<ReceiptSettings?> = _receiptSettings.asStateFlow()
+
     private val _unpaidOrders = MutableStateFlow<List<TableOrder>>(emptyList())
     private val _paidOrders = MutableStateFlow<List<TableOrder>>(emptyList())
     val paidOrders: StateFlow<List<TableOrder>> = _paidOrders.asStateFlow()
@@ -78,6 +90,12 @@ class CashierViewModel(application: Application) : AndroidViewModel(application)
                 repository.observePaidTableOrders(user.businessId).collect { list ->
                     _paidOrders.value = list
                 }
+            }
+            viewModelScope.launch {
+                _business.value = repository.fetchBusiness(user.businessId)
+            }
+            viewModelScope.launch {
+                _receiptSettings.value = repository.fetchReceiptSettings(user.businessId)
             }
         }
     }

@@ -159,6 +159,7 @@ fun PosScreen(
     val saveQueueState by posViewModel.saveQueueState.collectAsState()
     val pastOrders by posViewModel.pastOrders.collectAsState()
     val business by posViewModel.business.collectAsState()
+    val receiptSettings by posViewModel.receiptSettings.collectAsState()
     val isFnbBusiness = business?.transactionMode?.lowercase() == "fnb"
 
     // Jumlah tiap produk yang sudah masuk keranjang (dijumlah semua varian) —
@@ -607,6 +608,10 @@ fun PosScreen(
         ReceiptDialogClean(
             order = completedOrder!!,
             userName = user.name,
+            businessName = business?.name?.ifBlank { null } ?: "Toko Saya",
+            storeAddress = receiptSettings?.storeAddress,
+            headerText = receiptSettings?.headerText,
+            footerText = receiptSettings?.footerText,
             onDismiss = { posViewModel.dismissReceiptDialog() }
         )
     }
@@ -615,6 +620,10 @@ fun PosScreen(
     if (showHistoryDialog) {
         PastOrdersDialogClean(
             orders = pastOrders,
+            businessName = business?.name?.ifBlank { null } ?: "Toko Saya",
+            storeAddress = receiptSettings?.storeAddress,
+            headerText = receiptSettings?.headerText,
+            footerText = receiptSettings?.footerText,
             onDismiss = { showHistoryDialog = false }
         )
     }
@@ -1975,6 +1984,10 @@ private fun CheckoutRightPanel(
 fun ReceiptDialogClean(
     order: Order,
     userName: String,
+    businessName: String = "Toko Saya",
+    storeAddress: String? = null,
+    headerText: String? = null,
+    footerText: String? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2020,25 +2033,29 @@ fun ReceiptDialogClean(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "KOPI PAGI",
+                            text = businessName,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFF1E293B),
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "SaaS POS Multi-tenant",
-                            fontSize = 12.sp,
-                            color = Color(0xFF64748B),
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "Makassar, Indonesia",
-                            fontSize = 12.sp,
-                            color = Color(0xFF64748B),
-                            textAlign = TextAlign.Center
-                        )
+                        if (!storeAddress.isNullOrEmpty()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = storeAddress,
+                                fontSize = 12.sp,
+                                color = Color(0xFF64748B),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        if (!headerText.isNullOrEmpty()) {
+                            Text(
+                                text = headerText,
+                                fontSize = 11.sp,
+                                color = Color(0xFF64748B),
+                                textAlign = TextAlign.Center
+                            )
+                        }
 
                         Spacer(modifier = Modifier.height(16.dp))
                         DashedDivider(color = Color(0xFFCBD5E1))
@@ -2156,7 +2173,7 @@ fun ReceiptDialogClean(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Sudah berbelanja di outlet kami",
+                            text = footerText.takeUnless { it.isNullOrEmpty() } ?: "Sudah berbelanja di outlet kami",
                             fontSize = 10.sp,
                             color = Color(0xFF64748B),
                             textAlign = TextAlign.Center
@@ -2194,7 +2211,7 @@ fun ReceiptDialogClean(
 
                     Button(
                         onClick = {
-                            val textToCopy = generateReceiptText(order, userName)
+                            val textToCopy = generateReceiptText(order, userName, businessName, storeAddress, footerText)
                             clipboardManager.setText(AnnotatedString(textToCopy))
                             Toast.makeText(context, "Teks struk berhasil disalin!", Toast.LENGTH_SHORT).show()
                         },
@@ -2221,7 +2238,7 @@ fun ReceiptDialogClean(
                             } else {
                                 isPrinting = true
                                 scope.launch {
-                                    val receiptData = order.toReceiptData(businessName = "KOPI PAGI", cashierName = userName)
+                                    val receiptData = order.toReceiptData(businessName = businessName, cashierName = userName, storeAddress = storeAddress, headerText = headerText, footerText = footerText)
                                     val result = printerManager.printReceipt(saved, receiptData)
                                     isPrinting = false
                                     result.fold(
@@ -2261,7 +2278,7 @@ fun ReceiptDialogClean(
                         } else {
                             isPrinting = true
                             scope.launch {
-                                val receiptData = order.toReceiptData(businessName = "KOPI PAGI", cashierName = userName)
+                                val receiptData = order.toReceiptData(businessName = businessName, cashierName = userName, storeAddress = storeAddress, headerText = headerText, footerText = footerText)
                                 val result = printerManager.printReceipt(saved, receiptData)
                                 isPrinting = false
                                 result.fold(
@@ -2326,11 +2343,16 @@ private fun ReceiptSummaryRow(label: String, value: String) {
     }
 }
 
-private fun generateReceiptText(order: Order, userName: String): String {
+private fun generateReceiptText(
+    order: Order,
+    userName: String,
+    businessName: String = "Toko Saya",
+    storeAddress: String? = null,
+    footerText: String? = null
+): String {
     return buildString {
-        appendLine("============== KOPI PAGI ==============")
-        appendLine("SaaS POS Multi-tenant")
-        appendLine("Makassar, Indonesia")
+        appendLine("============== $businessName ==============")
+        if (!storeAddress.isNullOrEmpty()) appendLine(storeAddress)
         appendLine("------------------------------------------")
         appendLine("No. Order : ${order.id.take(16)}")
         appendLine("Tanggal   : ${if (order.createdAt.isNotBlank()) order.createdAt else SimpleDateFormat("d/M/yyyy, HH.mm.ss", Locale("id", "ID")).format(Date())}")
@@ -2349,7 +2371,7 @@ private fun generateReceiptText(order: Order, userName: String): String {
         appendLine("Status    : LUNAS")
         appendLine("------------------------------------------")
         appendLine("*** TERIMA KASIH ***")
-        appendLine("Sudah berbelanja di outlet kami")
+        appendLine(footerText.takeUnless { it.isNullOrEmpty() } ?: "Sudah berbelanja di outlet kami")
     }
 }
 
@@ -2357,6 +2379,10 @@ private fun generateReceiptText(order: Order, userName: String): String {
 fun PastOrdersDialogClean(
     orders: List<Order>,
     userName: String = "Kasir",
+    businessName: String = "Toko Saya",
+    storeAddress: String? = null,
+    headerText: String? = null,
+    footerText: String? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2468,8 +2494,11 @@ fun PastOrdersDialogClean(
                                                     printingOrderId = order.id
                                                     scope.launch {
                                                         val receiptData = order.toReceiptData(
-                                                            businessName = "USAHAKI POS",
-                                                            cashierName = userName
+                                                            businessName = businessName,
+                                                            cashierName = userName,
+                                                            storeAddress = storeAddress,
+                                                            headerText = headerText,
+                                                            footerText = footerText
                                                         )
                                                         val res = printerManager.printReceipt(saved, receiptData)
                                                         printingOrderId = null

@@ -13,6 +13,7 @@ import com.example.data.model.DiningTable
 import com.example.data.model.Order
 import com.example.data.model.Product
 import com.example.data.model.ProductVariant
+import com.example.data.model.ReceiptSettings
 import com.example.data.model.User
 import com.example.data.repository.UsahakiRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,11 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
     // seperti di website).
     private val _business = MutableStateFlow<Business?>(null)
     val business: StateFlow<Business?> = _business.asStateFlow()
+
+    // Kustomisasi struk (Pengaturan > Struk website) — lihat
+    // UsahakiRepository.fetchReceiptSettings untuk kenapa ini penting.
+    private val _receiptSettings = MutableStateFlow<ReceiptSettings?>(null)
+    val receiptSettings: StateFlow<ReceiptSettings?> = _receiptSettings.asStateFlow()
 
     // Daftar meja aktif utk cabang yang sedang beroperasi (koleksi "tables").
     private val _tables = MutableStateFlow<List<DiningTable>>(emptyList())
@@ -135,6 +141,9 @@ class PosViewModel(application: Application) : AndroidViewModel(application) {
 
             viewModelScope.launch {
                 _business.value = repository.fetchBusiness(user.businessId)
+            }
+            viewModelScope.launch {
+                _receiptSettings.value = repository.fetchReceiptSettings(user.businessId)
             }
 
             val unlockedRoles = listOf("owner", "admin", "manager")

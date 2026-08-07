@@ -108,6 +108,15 @@ fun MainAppScreen(
             val userRole = user.role.lowercase()
 
             val canToggleModule = userRole in listOf("owner", "admin", "manager", "manager_cabang")
+            // Kasir SEKARANG juga boleh melihat (& berinteraksi dengan) tab
+            // Dapur — supaya bisa mengecek langsung status pesanan yang
+            // sedang diproses koki, bukan cuma menebak. Sebelumnya tab
+            // navigasi Kasir/Dapur disembunyikan TOTAL untuk role kasir
+            // (dipaksa selalu di POS), jadi mereka tidak punya cara sama
+            // sekali melihat antrian dapur dari HP. Branch Switcher TETAP
+            // TIDAK diberikan ke kasir (masih pakai canToggleModule terpisah
+            // di atas) — kasir tetap terkunci ke 1 cabang tempat dia bekerja.
+            val canViewKitchenTab = canToggleModule || userRole == "kasir"
             val isSupportedRole = userRole in listOf("owner", "admin", "manager", "manager_cabang", "kasir", "kitchen")
 
             if (!isSupportedRole) {
@@ -141,7 +150,6 @@ fun MainAppScreen(
 
             val activeModule = when {
                 userRole == "kitchen" -> "kitchen"
-                userRole == "kasir" -> "pos"
                 else -> selectedModule
             }
 
@@ -178,7 +186,7 @@ fun MainAppScreen(
                     }
                 },
                 bottomBar = {
-                    if (canToggleModule) {
+                    if (canViewKitchenTab) {
                         NavigationBar(
                             containerColor = MinimalBackground,
                             tonalElevation = 0.dp,
@@ -349,11 +357,11 @@ fun SplashScreen(modifier: Modifier = Modifier) {
         ) {
             Box(
                 modifier = Modifier
-                    .size(100.dp)
-                    .clip(RoundedCornerShape(24.dp))
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(18.dp))
                     .background(Color.White)
-                    .border(1.5.dp, GreenPrimary.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
-                    .padding(12.dp),
+                    .border(1.5.dp, GreenPrimary.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
+                    .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
@@ -361,38 +369,38 @@ fun SplashScreen(modifier: Modifier = Modifier) {
                     contentDescription = "Usahaki Logo",
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(RoundedCornerShape(16.dp)),
+                        .clip(RoundedCornerShape(12.dp)),
                     contentScale = ContentScale.Crop
                 )
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Text(
                 text = "Usahaki.id",
-                fontSize = 28.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = GreenPrimary
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             Text(
                 text = "Sistem Kasir & Dapur Digital",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = MinimalTextSecondary
             )
 
-            Spacer(modifier = Modifier.height(36.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
             CircularProgressIndicator(
                 color = GreenPrimary,
                 strokeWidth = 3.dp,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(26.dp)
             )
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = "Memuat Sesi...",

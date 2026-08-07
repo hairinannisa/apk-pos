@@ -106,6 +106,9 @@ fun CashierScreen(
     val paidOrders by cashierViewModel.paidOrders.collectAsState()
     val isLoading by cashierViewModel.isLoading.collectAsState()
     val paymentState by cashierViewModel.paymentState.collectAsState()
+    val business by cashierViewModel.business.collectAsState()
+    val receiptSettings by cashierViewModel.receiptSettings.collectAsState()
+    val businessName = business?.name?.ifBlank { null } ?: "Toko Saya"
 
     val kitchenOrders by kitchenViewModel.orders.collectAsState()
     val kitchenProducts by kitchenViewModel.products.collectAsState()
@@ -119,6 +122,10 @@ fun CashierScreen(
 
     var activeTab by remember { mutableStateOf("unpaid") }
     var selectedBill by remember { mutableStateOf<TableBill?>(null) }
+    // FR-DINEIN-ADDITEM: kasir menambah item ke tagihan yang sudah berjalan
+    // (mis. pelanggan minta tambah self service / ada pesanan susulan yang
+    // belum tercatat) walau pesanannya sudah/sedang diproses dapur.
+    var showAddItemsFor by remember { mutableStateOf<TableBill?>(null) }
     var cancelDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
     var addItemDialogOrder by remember { mutableStateOf<TableOrder?>(null) }
     var showPrinterSettings by remember { mutableStateOf(false) }
@@ -203,7 +210,11 @@ fun CashierScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             items(bills, key = { it.billKey }) { bill ->
-                                BillCard(bill = bill, onClick = { selectedBill = bill })
+                                BillCard(
+                                    bill = bill,
+                                    onClick = { selectedBill = bill },
+                                    onAddItems = { showAddItemsFor = bill }
+                                )
                             }
                         }
                     }
@@ -253,8 +264,11 @@ fun CashierScreen(
                                                         printingOrderId = order.id
                                                         scope.launch {
                                                             val receiptData = order.toReceiptData(
-                                                                businessName = "USAHAKI POS",
-                                                                cashierName = user.name
+                                                                businessName = businessName,
+                                                                cashierName = user.name,
+                                                                storeAddress = receiptSettings?.storeAddress,
+                                                                headerText = receiptSettings?.headerText,
+                                                                footerText = receiptSettings?.footerText
                                                             )
                                                             val res = printerManager.printReceipt(saved, receiptData)
                                                             printingOrderId = null
@@ -351,6 +365,32 @@ fun CashierScreen(
         )
     }
 
+    // Tombol "Tambah Item" dari tab "Belum Dibayar" (BillCard) — dipakai
+    // kasir kalau pelanggan lapor ada self service / pesanan susulan yang
+    // belum tercatat, TANPA perlu pindah dulu ke tab "Antrean Dapur". Pakai
+    // dialog & ViewModel yang SAMA dengan tab Dapur (kitchenViewModel) supaya
+    // 1 sumber logika (stok, recompute status) — bukan implementasi terpisah.
+    showAddItemsFor?.let { bill ->
+        val targetOrder = bill.orders.firstOrNull()
+        if (targetOrder != null) {
+            AddItemsDialog(
+                order = targetOrder,
+                products = kitchenProducts,
+                categories = kitchenCategories,
+                errorMessage = actionError,
+                onClearError = { kitchenViewModel.clearActionError() },
+                onConfirm = { newItems ->
+                    kitchenViewModel.addItemsToOrder(targetOrder, newItems)
+                    showAddItemsFor = null
+                },
+                onDismiss = {
+                    kitchenViewModel.clearActionError()
+                    showAddItemsFor = null
+                }
+            )
+        }
+    }
+
     selectedBill?.let { bill ->
         PayBillDialog(
             bill = bill,
@@ -388,12 +428,12 @@ private fun CashierTabChip(label: String, isSelected: Boolean, onClick: () -> Un
 }
 
 @Composable
-private fun BillCard(bill: TableBill, onClick: () -> Unit) {
+private fun BillCard(bill: TableBill, onClick: () -> Unit, onAddItems: () -> Unit) {
     val statusLabel = if (bill.allCompleted) "Siap Dibayar — Selesai Dimasak" else "Masih Diproses Dapur"
     val statusColor = if (bill.allCompleted) GreenPrimary else Color(0xFFEA580C)
 
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
@@ -401,7 +441,7 @@ private fun BillCard(bill: TableBill, onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().clickable { onClick() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -414,16 +454,32 @@ private fun BillCard(bill: TableBill, onClick: () -> Unit) {
                 fontSize = 12.sp,
                 color = MinimalTextSecondary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable { onClick() }
             )
             Spacer(modifier = Modifier.height(8.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(statusColor.copy(alpha = 0.12f))
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(statusLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = statusColor)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(statusColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(statusLabel, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = statusColor)
+                }
+
+                // FR-DINEIN-ADDITEM: tetap boleh tambah item walau pesanan
+                // sudah/sedang diproses dapur (mis. self service susulan
+                // yang pelanggan laporkan ke kasir) — selama belum lunas.
+                TextButton(onClick = onAddItems, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = GreenPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("Tambah Item", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GreenPrimary)
+                }
             }
         }
     }
